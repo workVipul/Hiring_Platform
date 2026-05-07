@@ -15,16 +15,26 @@ Base.metadata.create_all(bind=engine)
 
 SEED_DATA = [
     {
-        "name": "Senior Backend Engineer JD",
-        "file_url": "uploads/senior_backend_engineer.pdf",
+        "name": "Senior Java Developer_5 to 8 years",
+        "file_url": "uploads/Senior Java Developer_5 to 8 years.pdf",
     },
     {
-        "name": "Product Manager — Growth",
-        "file_url": "uploads/pm_growth.pdf",
+        "name": "Java Developer_Special Projects",
+        "file_url": "uploads/Java Developer_Special Projects.pdf",
     },
     {
-        "name": "Frontend Engineer (React)",
-        "file_url": "uploads/frontend_engineer_react.pdf",
+        "name": "Java Lead_JD",
+        "file_url": "uploads/Java Lead_JD.pdf",
+    },
+    {
+        "name": "Java Lead_Special Projects",
+        "file_url": "uploads/Java Lead_Special Projects.pdf",
+    },{
+        "name": "Java_3 to 5 years",
+        "file_url": "uploads/Java_3 to 5 years.pdf",
+    },{
+        "name": "PE-Job Description",
+        "file_url": "uploads/PE-Job Description.pdf",
     },
 ]
 
