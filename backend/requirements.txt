@@ -1,0 +1,13 @@
+# Existing
+fastapi
+uvicorn[standard]
+anthropic
+cachetools
+
+# Database — new
+sqlalchemy>=2.0
+psycopg2-binary        # PostgreSQL driver for SQLAlchemy
+pydantic-settings      # reads .env into Settings class
+
+# Optional: use Alembic for migrations in production
+# alembic
