@@ -1,15 +1,12 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-DATABASE_URL = "postgresql://postgres:@127.0.0.1:5432/jdforge"
+from app.core.config import settings
+
 
 try:
-    engine = create_engine(DATABASE_URL)
-
-    conn = engine.connect()
-
+    engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    with engine.connect() as conn:
+        conn.execute(text("select 1")).scalar()
     print("CONNECTED SUCCESSFULLY")
-
-    conn.close()
-
 except Exception as e:
     print(e)

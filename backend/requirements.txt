@@ -1,13 +1,16 @@
-# Existing
 fastapi
 uvicorn[standard]
 anthropic
 cachetools
-
-# Database — new
 sqlalchemy>=2.0
-psycopg2-binary        # PostgreSQL driver for SQLAlchemy
-pydantic-settings      # reads .env into Settings class
+psycopg2-binary
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt<4
+httpx
+email-validator
+python-multipart
 
 # Optional: use Alembic for migrations in production
 # alembic

@@ -5,6 +5,8 @@ venv/
 
 # Node
 node_modules/
+.next/
+.next-webpack/
 
 # Environment
 .env

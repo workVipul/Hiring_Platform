@@ -2,17 +2,23 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # Existing key — keep compatible with current repo
-    ANTHROPIC_API_KEY: str = ""
-
-    # New: database
+    # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/jdforge"
-
-    # New: local upload path (relative to backend root)
     UPLOADS_DIR: str = "uploads"
-
-    # Existing: CORS
     ALLOWED_ORIGINS: str = "http://localhost:3000"
+
+    # Auth
+    JWT_SECRET: str = "change-this-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24
+
+    # LLM provider configuration
+    LLM_PROVIDER: str = "groq"
+    LLM_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_API_KEY: str = ""
+    GROK_API_KEY: str = ""
+    ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
 
     class Config:
         env_file = ".env"

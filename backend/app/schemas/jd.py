@@ -1,34 +1,87 @@
 from datetime import datetime
-from pydantic import BaseModel
+from typing import Any, Optional
 
+from pydantic import BaseModel, Field
 
-# --- Request schemas (what the API accepts) ---
 
 class JDCreate(BaseModel):
-    """Used when inserting a new JD record (e.g., after a file upload)."""
-    name: str
-    file_url: str
+    title: str
+    content: Optional[str] = None
+    ownership: str = "personal"
+    jd_score: Optional[int] = Field(default=None, ge=0, le=100)
+    pdf_url: Optional[str] = None
+    context: Optional[str] = None
+    skills: list[str] = []
+    resume_skills: list[str] = []
+    metadata: dict[str, Any] = {}
 
 
-# --- Response schemas (what the API returns) ---
+class JDGenerateRequest(BaseModel):
+    raw_input: str
+    input_type: str = "text"
+
+
+class JDRefineRequest(BaseModel):
+    instruction: str
+    content: Optional[str] = None
+
+
+class JDPublishRequest(BaseModel):
+    ownership: str
+    title: str
+    content: str
+    jd_score: Optional[int] = Field(default=None, ge=0, le=100)
+    pdf_url: Optional[str] = None
+    context: Optional[str] = None
+    skills: list[str] = []
+    resume_skills: list[str] = []
+    metadata: dict[str, Any] = {}
+
 
 class JDResponse(BaseModel):
-    """
-    Shape of a single JD record returned by the API.
-    The frontend TypeScript interface should mirror this exactly.
-    """
     id: int
-    name: str
-    file_url: str
+    title: str
+    content: Optional[str]
+    ownership: str
+    jd_score: Optional[int]
+    pdf_url: Optional[str]
+    created_by: Optional[int]
+    context: Optional[str] = None
+    skills: list[str] = []
+    resume_skills: list[str] = []
+    metadata: dict[str, Any] = {}
     created_at: datetime
     updated_at: datetime
 
-    # from_attributes=True (formerly orm_mode) allows Pydantic to read
-    # SQLAlchemy ORM objects directly instead of requiring plain dicts.
     model_config = {"from_attributes": True}
 
 
 class JDListResponse(BaseModel):
-    """Wrapper for list endpoints — makes it easy to add pagination later."""
     items: list[JDResponse]
     total: int
+
+
+class GeneratedJD(BaseModel):
+    title: str
+    summary: str = ""
+    responsibilities: list[str] = []
+    requirements: list[str] = []
+    nice_to_have: list[str] = []
+    compensation: Any = ""
+    about_company: Any = ""
+    jd_score: Optional[int | float] = Field(default=None, ge=0, le=100)
+    skills: list[str] = []
+    resume_skills: list[str] = []
+    metadata: dict[str, Any] = {}
+
+    model_config = {"extra": "allow"}
+
+
+def normalize_generated_jd(data: dict[str, Any]) -> dict[str, Any]:
+    if "jd_score" in data and data["jd_score"] is not None:
+        score = float(data["jd_score"])
+        data["jd_score"] = round(score * 10 if score <= 10 else score)
+    data.setdefault("skills", [])
+    data.setdefault("resume_skills", [])
+    data.setdefault("metadata", {})
+    return GeneratedJD.model_validate(data).model_dump()
