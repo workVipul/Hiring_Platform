@@ -18,8 +18,8 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <Link href="/dashboard" className="brand">
-        <span className="brand-mark">J</span>
-        <span>JDForge</span>
+        <span className="brand-mark">N</span>
+        <span>NinjaForge</span>
       </Link>
 
       <nav className="nav-list">

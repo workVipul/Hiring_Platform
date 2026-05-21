@@ -21,10 +21,11 @@ export default function PublishTab({
   if (!jd) return <div className="empty-state">Generate and review a JD before publishing.</div>;
 
   const currentJD = jd;
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
   const publishedPdfUrl = savedJD?.pdf_url
     ? savedJD.pdf_url.startsWith("http")
       ? savedJD.pdf_url
-      : `/${savedJD.pdf_url}`
+      : `${BACKEND_URL}/${savedJD.pdf_url.startsWith("/") ? savedJD.pdf_url.substring(1) : savedJD.pdf_url}`
     : null;
 
   async function handlePublish() {
@@ -66,8 +67,8 @@ export default function PublishTab({
         <div className="success stack">
           <p>Published as JD #{savedJD.id}</p>
           {publishedPdfUrl && (
-            <a href={publishedPdfUrl} target="_blank" rel="noreferrer">
-              Open generated PDF
+            <a href={publishedPdfUrl} target="_blank" rel="noreferrer" className="secondary-button" style={{ width: "fit-content" }}>
+              Open
             </a>
           )}
         </div>

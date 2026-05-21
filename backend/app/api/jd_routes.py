@@ -191,11 +191,9 @@ def publish_jd(jd_id: int, payload: JDPublishRequest, db: Session = Depends(get_
         jd.ownership = ownership
 
     jd.jd_score = payload.jd_score
-    jd.pdf_url = payload.pdf_url
     db.commit()
     db.refresh(jd)
-    if not jd.pdf_url:
-        jd.pdf_url = write_simple_pdf(jd.title, jd.content or "", jd.id)
+    jd.pdf_url = write_simple_pdf(jd.title, jd.content or "", jd.id)
 
     upsert_details(
         db,
@@ -221,7 +219,7 @@ def update_jd(jd_id: int, payload: JDCreate, db: Session = Depends(get_db), curr
     jd.content = payload.content
     jd.ownership = validate_ownership(payload.ownership)
     jd.jd_score = payload.jd_score
-    jd.pdf_url = payload.pdf_url
+    jd.pdf_url = write_simple_pdf(jd.title, jd.content or "", jd.id)
     upsert_details(
         db,
         jd,
@@ -232,6 +230,90 @@ def update_jd(jd_id: int, payload: JDCreate, db: Session = Depends(get_db), curr
     )
     db.commit()
     db.refresh(jd)
+    detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
+    return serialize_jd(jd, detail)
+
+
+@router.post("/upload", response_model=JDResponse, status_code=201)
+async def upload_and_parse_jd(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    filename = file.filename or ""
+    content_type = file.content_type or ""
+    
+    file_bytes = await file.read()
+    
+    raw_text = ""
+    if filename.lower().endswith(".pdf") or "pdf" in content_type.lower():
+        try:
+            reader = PdfReader(BytesIO(file_bytes))
+            text_parts = []
+            for page in reader.pages:
+                text_parts.append(page.extract_text() or "")
+            raw_text = "\n".join(text_parts).strip()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse PDF file: {e}")
+    elif filename.lower().endswith(".txt") or "text" in content_type.lower():
+        try:
+            raw_text = file_bytes.decode("utf-8", errors="ignore").strip()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to read text file: {e}")
+    else:
+        raise HTTPException(
+            status_code=400, 
+            detail="Unsupported file format. Please upload a .pdf or .txt file."
+        )
+        
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty or contains no readable text.")
+
+    # Call LLM to parse and structure the JD
+    try:
+        llm = get_llm_provider()
+        result = await llm.complete_json(
+            system=GENERATE_SYSTEM,
+            user=f"Hiring context extracted from uploaded file ({filename}):\n{raw_text}",
+            max_tokens=3000,
+        )
+        normalized = normalize_generated_jd(result)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"LLM parsing failed: {exc}") from exc
+
+    # Create the JD row in database
+    jd_title = normalized.get("title") or filename.split(".")[0].replace("_", " ").title()
+    content_json = json.dumps(normalized)
+    
+    jd = JD(
+        title=jd_title,
+        content=content_json,
+        ownership="personal",
+        jd_score=normalized.get("jd_score"),
+        created_by=current_user.id,
+    )
+    db.add(jd)
+    db.commit()
+    db.refresh(jd)
+    
+    # Generate and save PDF with company template
+    jd.pdf_url = write_simple_pdf(jd.title, jd.content, jd.id)
+    
+    # Save details (skills, metadata)
+    upsert_details(
+        db,
+        jd,
+        context=normalized.get("summary") or raw_text[:500],
+        skills=normalized.get("skills") or [],
+        resume_skills=normalized.get("resume_skills") or [],
+        metadata=normalized.get("metadata") or {},
+    )
+    db.commit()
+    db.refresh(jd)
+    
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
     return serialize_jd(jd, detail)
 

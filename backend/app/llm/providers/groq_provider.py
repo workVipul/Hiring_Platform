@@ -18,27 +18,87 @@ class GroqProvider(LLMProvider):
         if not self.api_key:
             raise ValueError("GROQ_API_KEY is not configured")
 
+        import asyncio
+        import logging
+        import random
+        
+        logger = logging.getLogger(__name__)
+        
+        models_to_try = [self.model]
+        if self.model != "llama-3.1-8b-instant":
+            models_to_try.append("llama-3.1-8b-instant")
+        if "llama3-8b-8192" not in models_to_try:
+            models_to_try.append("llama3-8b-8192")
+
+        max_retries = 4
+        base_delay = 1.0
+
         async with httpx.AsyncClient() as client:
-            res = await client.post(
-                f"{self.BASE_URL}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    "max_tokens": max_tokens,
-                    "temperature": 0.3,
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=120,
-            )
-            res.raise_for_status()
-            return res.json()["choices"][0]["message"]["content"]
+            for model_attempt_idx, model in enumerate(models_to_try):
+                for attempt in range(max_retries + 1):
+                    try:
+                        res = await client.post(
+                            f"{self.BASE_URL}/chat/completions",
+                            headers={
+                                "Authorization": f"Bearer {self.api_key}",
+                                "Content-Type": "application/json",
+                            },
+                            json={
+                                "model": model,
+                                "messages": [
+                                    {"role": "system", "content": system},
+                                    {"role": "user", "content": user},
+                                ],
+                                "max_tokens": max_tokens,
+                                "temperature": 0.3,
+                                "response_format": {"type": "json_object"},
+                            },
+                            timeout=120,
+                        )
+                        res.raise_for_status()
+                        return res.json()["choices"][0]["message"]["content"]
+                    except httpx.HTTPStatusError as e:
+                        is_rate_limit = (e.response.status_code == 429) or (
+                            e.response.status_code == 400 and "rate limit" in e.response.text.lower()
+                        )
+                        
+                        if is_rate_limit:
+                            if attempt < max_retries:
+                                retry_after = e.response.headers.get("retry-after")
+                                sleep_time = 0.0
+                                if retry_after:
+                                    try:
+                                        sleep_time = float(retry_after)
+                                    except ValueError:
+                                        pass
+                                if not sleep_time:
+                                    reset_val = e.response.headers.get("x-ratelimit-reset")
+                                    if reset_val:
+                                        try:
+                                            sleep_time = float(reset_val.rstrip('s'))
+                                        except ValueError:
+                                            pass
+                                if not sleep_time:
+                                    sleep_time = base_delay * (2.0 ** attempt) + random.uniform(0.5, 1.5)
+                                else:
+                                    sleep_time += random.uniform(0.5, 1.5)
+                                
+                                logger.warning(
+                                    f"Groq API returned rate limit for model {model}. "
+                                    f"Retrying in {sleep_time:.2f}s... (Attempt {attempt + 1}/{max_retries})"
+                                )
+                                await asyncio.sleep(sleep_time)
+                                continue
+                            else:
+                                if model_attempt_idx < len(models_to_try) - 1:
+                                    logger.warning(
+                                        f"Model {model} rate limited and out of retries. "
+                                        f"Falling back to next model: {models_to_try[model_attempt_idx + 1]}"
+                                    )
+                                    break
+                                raise
+                        raise
+
 
     async def complete_json(self, system: str, user: str, max_tokens: int = 2000) -> dict:
         raw = await self.complete(system, user, max_tokens)

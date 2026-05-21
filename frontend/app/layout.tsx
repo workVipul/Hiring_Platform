@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "JDForge — AI Hiring Platform",
+  title: "NinjaForge — AI Hiring Platform",
   description: "Generate, manage, and analyse Job Descriptions with AI",
 };
 

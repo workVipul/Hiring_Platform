@@ -54,50 +54,86 @@ export default function LoginPage() {
 
   return (
     <main className="auth-page">
-      <section className="auth-panel">
-        <div>
-          <p className="eyebrow">JDForge</p>
-          <h1>{mode === "login" ? "Sign in" : "Create account"}</h1>
-          <p className="muted">Generate, review, publish, and source job descriptions.</p>
+      {/* Left Banner with Company Branding */}
+      <section className="auth-banner">
+        <div className="auth-banner-content">
+          <div className="auth-banner-brand">
+            <img src="/wissen_logo.png" alt="Wissen Technology Logo" className="auth-banner-logo" />
+            <div className="auth-banner-divider"></div>
+            <span className="auth-banner-title">NinjaForge</span>
+          </div>
+          
+          <div className="auth-banner-hero">
+            <h2>Next-Gen Job Sourcing & Candidate Matching</h2>
+            <p>Elevate your recruitment process with automated job description generation, smart PDF building with company templates, Zoho candidate matching, and LLM-powered fit analysis.</p>
+          </div>
+          
+          <div className="auth-banner-footer">
+            <p>© {new Date().getFullYear()} Wissen Technology. All rights reserved.</p>
+          </div>
         </div>
+      </section>
 
-        <div className="segmented">
-          <button className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")} type="button">
-            Sign in
-          </button>
-          <button className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")} type="button">
-            Create account
-          </button>
-        </div>
+      {/* Right Login Details Section */}
+      <section className="auth-form-container">
+        <div className="auth-panel-wrapper">
+          <div className="auth-panel-header">
+            <h1>{mode === "login" ? "Sign in" : "Create account"}</h1>
+            <p className="muted">Enter your details to access the NinjaForge portal.</p>
+          </div>
 
-        <form onSubmit={handleSubmit} className="stack">
-          {mode === "register" && (
+          <div className="segmented">
+            <button className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")} type="button">
+              Sign in
+            </button>
+            <button className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")} type="button">
+              Create account
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="stack">
+            {mode === "register" && (
+              <label>
+                Name
+                <input 
+                  value={name} 
+                  onChange={(e) => setName(e.target.value)} 
+                  autoComplete="name" 
+                  placeholder="Your full name"
+                  required 
+                />
+              </label>
+            )}
             <label>
-              Name
-              <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
+              Email Address
+              <input 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                type="email" 
+                autoComplete="email" 
+                placeholder="name@wissen.com"
+                required 
+              />
             </label>
-          )}
-          <label>
-            Email
-            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" required />
-          </label>
-          <label>
-            Password
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              minLength={6}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              required
-            />
-          </label>
-          {notice && <p className="success">{notice}</p>}
-          {error && <p className="error">{error}</p>}
-          <button className="primary-button" disabled={loading || (mode === "register" && name.trim().length < 2)} type="submit">
-            {loading ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
-          </button>
-        </form>
+            <label>
+              Password
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                minLength={6}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                placeholder="••••••••"
+                required
+              />
+            </label>
+            {notice && <p className="success">{notice}</p>}
+            {error && <p className="error">{error}</p>}
+            <button className="primary-button" disabled={loading || (mode === "register" && name.trim().length < 2)} type="submit">
+              {loading ? "Working..." : mode === "login" ? "Sign in" : "Create account"}
+            </button>
+          </form>
+        </div>
       </section>
     </main>
   );

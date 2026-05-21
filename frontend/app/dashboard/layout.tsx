@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import Sidebar from "@/components/dashboard/Sidebar";
+import Header from "@/components/dashboard/Header";
+import Footer from "@/components/dashboard/Footer";
 import { useAuth } from "@/hooks/useAuth";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -17,9 +18,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!isAuthenticated) return null;
 
   return (
-    <div className="dashboard-shell">
-      <Sidebar />
-      <main className="dashboard-main">{children}</main>
+    <div className="dashboard-shell-new">
+      <Header />
+      <main className="dashboard-main-new">{children}</main>
+      <Footer />
     </div>
   );
 }

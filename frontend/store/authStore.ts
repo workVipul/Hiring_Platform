@@ -22,6 +22,6 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (token, userId, userName, accessType) => set({ token, userId, userName, accessType }),
       logout: () => set({ token: null, userId: null, userName: null, accessType: null }),
     }),
-    { name: "jdforge-auth" },
+    { name: "ninjaforge-auth" },
   ),
 );

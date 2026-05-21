@@ -14,10 +14,13 @@ function formatDate(iso: string): string {
   });
 }
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
 function resolveFileUrl(fileUrl: string | null): string | null {
   if (!fileUrl) return null;
   if (fileUrl.startsWith("http")) return fileUrl;
-  return `/${fileUrl}`;
+  const cleanPath = fileUrl.startsWith("/") ? fileUrl.substring(1) : fileUrl;
+  return `${BACKEND_URL}/${cleanPath}`;
 }
 
 export default function JDTable() {
@@ -71,6 +74,20 @@ export default function JDTable() {
   );
 }
 
+function getJDSummary(jd: JD): string {
+  if (jd.context) return jd.context;
+  if (!jd.content) return "";
+  try {
+    const parsed = JSON.parse(jd.content);
+    if (parsed && typeof parsed === "object") {
+      return parsed.summary || parsed.content || jd.content;
+    }
+  } catch {
+    // Return raw content if it fails to parse
+  }
+  return jd.content;
+}
+
 function JDRow({ jd, onDelete }: { jd: JD; onDelete: () => void }) {
   const fileUrl = resolveFileUrl(jd.pdf_url);
 
@@ -78,13 +95,13 @@ function JDRow({ jd, onDelete }: { jd: JD; onDelete: () => void }) {
     <tr>
       <td>
         <strong>{jd.title}</strong>
-        <span className="muted small line-clamp">{jd.content}</span>
+        <span className="muted small line-clamp">{getJDSummary(jd)}</span>
       </td>
       <td><span className="badge">{jd.ownership}</span></td>
       <td>{jd.jd_score ?? "-"}</td>
       <td>{jd.skills?.slice(0, 3).join(", ") || "-"}</td>
       <td>{jd.created_by ?? "-"}</td>
-      <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer">Open</a> : "-"}</td>
+      <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">Open</a> : "-"}</td>
       <td>{formatDate(jd.created_at)}</td>
       <td><button className="danger-button" onClick={onDelete}>Delete</button></td>
     </tr>

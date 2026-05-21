@@ -4,7 +4,7 @@ const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  const stored = window.localStorage.getItem("jdforge-auth");
+  const stored = window.localStorage.getItem("ninjaforge-auth");
   if (!stored) return null;
   try {
     const parsed = JSON.parse(stored);
@@ -35,6 +35,11 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
 export const jdApi = {
   list: (): Promise<JDListResponse> => req("/api/v1/jds"),
   get: (id: number): Promise<JD> => req(`/api/v1/jds/${id}`),
+  upload: (file: File): Promise<JD> => {
+    const form = new FormData();
+    form.append("file", file);
+    return req("/api/v1/jds/upload", { method: "POST", body: form });
+  },
   create: (payload: JDCreate): Promise<JD> =>
     req("/api/v1/jds", { method: "POST", body: JSON.stringify(payload) }),
   update: (id: number, payload: JDCreate): Promise<JD> =>
@@ -56,5 +61,15 @@ export const jdApi = {
     }),
   publish: (id: number, payload: JDPublishRequest): Promise<JD> =>
     req(`/api/v1/jds/${id}/publish`, { method: "POST", body: JSON.stringify(payload) }),
+  sourceCandidates: (jdId: number, page = 1, perPage = 20): Promise<{
+    jd_id: number;
+    jd_title: string;
+    search_skills: string[];
+    candidates: any[];
+    total: number;
+  }> => req("/api/v1/sourcing/candidates", {
+    method: "POST",
+    body: JSON.stringify({ jd_id: jdId, page, per_page: perPage }),
+  }),
   delete: (id: number): Promise<void> => req(`/api/v1/jds/${id}`, { method: "DELETE" }),
 };
