@@ -1,40 +1,63 @@
-import asyncio
 import logging
 import json
+import re
 from app.llm.factory import get_llm_provider
 from app.models.jd import JD
 
 logger = logging.getLogger(__name__)
 
 RANKING_SYSTEM = """You are an expert technical recruiter.
-Analyze the candidate's profile details against the job description requirements.
-Determine:
-1. skill_match_score (0 to 100): How well do the candidate's skills match the JD's required skills?
-2. experience_synergy (0 to 100): Does the candidate's experience level and history align with the seniority of the role?
-3. fit_analysis: A concise, professional 2-3 sentence paragraph explaining why they fit, highlighting strengths and noting missing skills.
-4. missing_skills: A list of key required skills from the JD that the candidate lacks.
-5. match_percentage (0 to 100): A composite score representing overall fit.
+Score candidate fit against the JD. Return compact JSON only:
+{"candidates":[{"id":"candidate id","skill_match_score":int,"experience_synergy":int,"fit_analysis":"one concise sentence","missing_skills":["skill"],"match_percentage":int}]}"""
 
-You MUST return a valid JSON object only, matching this structure:
-{
-  "skill_match_score": int,
-  "experience_synergy": int,
-  "fit_analysis": str,
-  "missing_skills": list[str],
-  "match_percentage": int
-}"""
+TECH_ALIASES = {
+    "java development framework": {"java", "spring", "spring boot"},
+    "java 8+": {"java"},
+    "core java": {"java"},
+    "golang": {"go", "golang"},
+    "go lang": {"go", "golang"},
+    "restful apis": {"rest", "api", "apis", "restful api"},
+    "microservices architecture": {"microservices", "microservice"},
+    "sql / nosql databases": {"sql", "nosql", "database", "databases"},
+    "cloud development": {"cloud", "aws", "azure", "gcp"},
+    "devops principles": {"devops", "ci/cd", "jenkins"},
+}
+
+
+def normalize_skill_tokens(skill: str) -> set[str]:
+    value = re.sub(r"[^a-z0-9+#./ -]", " ", str(skill).lower())
+    value = re.sub(r"\s+", " ", value).strip()
+    tokens = {value} if value else set()
+    tokens.update(part for part in re.split(r"[/,; ]+", value) if len(part) >= 2)
+    for alias, expanded in TECH_ALIASES.items():
+        if alias in value or value in expanded:
+            tokens.update(expanded)
+    return {token for token in tokens if token not in {"development", "framework", "principles", "practices", "strong", "knowledge"}}
+
+
+def skill_matches(required: str, candidate_skills: list[str]) -> bool:
+    required_tokens = normalize_skill_tokens(required)
+    if not required_tokens:
+        return False
+    for candidate_skill in candidate_skills:
+        candidate_tokens = normalize_skill_tokens(candidate_skill)
+        if required_tokens & candidate_tokens:
+            return True
+        if any(req in cand or cand in req for req in required_tokens for cand in candidate_tokens if len(req) >= 3 and len(cand) >= 3):
+            return True
+    return False
+
 
 def get_fallback_score(candidate: dict, jd_skills: list[str]) -> dict:
-    cand_skills_set = {s.lower() for s in candidate.get("skills", [])}
-    jd_skills_set = {s.lower() for s in jd_skills}
-    
-    overlap = cand_skills_set.intersection(jd_skills_set)
-    skill_score = int(len(overlap) / len(jd_skills_set) * 100) if jd_skills_set else 50
-    
-    missing = list(jd_skills_set - cand_skills_set)
-    missing_title = [s.title() for s in missing][:5]
-    
-    overlap_display = ", ".join(list(overlap)[:5]) if overlap else "none"
+    candidate_skills = candidate.get("skills", [])
+    required_skills = [skill for skill in jd_skills if str(skill).strip()]
+
+    matched = [skill for skill in required_skills if skill_matches(skill, candidate_skills)]
+    missing = [skill for skill in required_skills if skill not in matched]
+    skill_score = int(len(matched) / len(required_skills) * 100) if required_skills else 50
+
+    missing_title = [str(skill).strip() for skill in missing][:5]
+    overlap_display = ", ".join(str(skill) for skill in matched[:5]) if matched else "none"
     missing_display = ", ".join(missing_title) if missing_title else "none"
     
     return {
@@ -78,44 +101,63 @@ class CandidateRankingEngine:
         to_llm = candidates[:top_n]
         remaining = candidates[top_n:]
 
-        async def score_single(cand: dict) -> dict:
+        async def score_batch(batch: list[dict]) -> list[dict]:
             if not llm:
-                scores = cand["heuristic"]
-                return {**cand, **scores}
-                
-            user_content = f"""JOB DESCRIPTION:
-Title: {jd.title}
-Requirements / Context: {jd_text}
-Key Required Skills: {', '.join(jd_skills)}
+                return [{**cand, **cand["heuristic"]} for cand in batch]
 
-CANDIDATE PROFILE:
-Name: {cand['full_name']}
-Skills: {', '.join(cand['skills'])}
-Experience Level: {cand['experience_level']}
-Location: {cand['location']}
-"""
-            try:
-                result = await llm.complete_json(system=RANKING_SYSTEM, user=user_content, max_tokens=1000)
-                return {
-                    **cand,
-                    "skill_match_score": int(result.get("skill_match_score", 0)),
-                    "experience_synergy": int(result.get("experience_synergy", 0)),
-                    "fit_analysis": str(result.get("fit_analysis") or "No analysis generated."),
-                    "missing_skills": list(result.get("missing_skills") or []),
-                    "match_percentage": int(result.get("match_percentage", 0))
+            compact_candidates = [
+                {
+                    "id": cand["id"],
+                    "skills": cand.get("skills", [])[:20],
+                    "experience": cand.get("experience_level"),
+                    "location": cand.get("location"),
                 }
+                for cand in batch
+            ]
+            user_content = json.dumps(
+                {
+                    "jd": {
+                        "title": jd.title,
+                        "requirements": jd_text[:1800],
+                        "skills": jd_skills[:15],
+                    },
+                    "candidates": compact_candidates,
+                },
+                separators=(",", ":"),
+            )
+            try:
+                result = await llm.complete_json(system=RANKING_SYSTEM, user=user_content, max_tokens=900)
+                scored = result.get("candidates") if isinstance(result, dict) else []
+                score_map = {str(item.get("id")): item for item in scored if isinstance(item, dict)}
+                ranked = []
+                for cand in batch:
+                    score = score_map.get(str(cand["id"]), cand["heuristic"])
+                    skill_match_score = max(
+                        int(score.get("skill_match_score", cand["heuristic"]["skill_match_score"])),
+                        int(cand["heuristic"]["skill_match_score"]),
+                    )
+                    experience_synergy = max(
+                        int(score.get("experience_synergy", cand["heuristic"]["experience_synergy"])),
+                        int(cand["heuristic"]["experience_synergy"]),
+                    )
+                    ranked.append({
+                        **cand,
+                        "skill_match_score": skill_match_score,
+                        "experience_synergy": experience_synergy,
+                        "fit_analysis": str(score.get("fit_analysis") or cand["heuristic"]["fit_analysis"]),
+                        "missing_skills": list(score.get("missing_skills") or cand["heuristic"]["missing_skills"]),
+                        "match_percentage": max(
+                            int(score.get("match_percentage", cand["heuristic"]["match_percentage"])),
+                            int(skill_match_score * 0.65 + experience_synergy * 0.35),
+                        ),
+                    })
+                return ranked
             except Exception as e:
-                logger.error(f"LLM ranking failed for candidate {cand['id']}: {e}")
-                scores = cand["heuristic"]
-                return {**cand, **scores}
+                logger.error(f"LLM batch ranking failed: {e}")
+                return [{**cand, **cand["heuristic"]} for cand in batch]
 
-        # 4. Run concurrent scoring tasks with a semaphore to limit concurrency
-        sem = asyncio.Semaphore(2)
-        async def score_with_sem(cand: dict) -> dict:
-            async with sem:
-                return await score_single(cand)
-        tasks = [score_with_sem(c) for c in to_llm]
-        ranked_top = await asyncio.gather(*tasks)
+        # 4. Score top candidates in one compact LLM call to reduce token and request cost.
+        ranked_top = await score_batch(to_llm)
 
         # 5. Populate final fields for the remaining candidates using heuristic scores
         ranked_remaining = []

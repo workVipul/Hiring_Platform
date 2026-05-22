@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { jdApi } from "@/services/jdApi";
 import type { GeneratedJD, JD } from "@/types/jd";
@@ -14,13 +14,11 @@ export default function PublishTab({
   savedJD: JD | null;
   onPublished: (jd: JD) => void;
 }) {
-  const [ownership, setOwnership] = useState<"personal" | "public">("personal");
   const [loading, setLoading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
 
-  if (!jd) return <div className="empty-state">Generate and review a JD before publishing.</div>;
-
-  const currentJD = jd;
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
   const publishedPdfUrl = savedJD?.pdf_url
     ? savedJD.pdf_url.startsWith("http")
@@ -28,21 +26,58 @@ export default function PublishTab({
       : `${BACKEND_URL}/${savedJD.pdf_url.startsWith("/") ? savedJD.pdf_url.substring(1) : savedJD.pdf_url}`
     : null;
 
-  async function handlePublish() {
+  function payloadFor(ownership: "personal" | "public") {
+    if (!jd) throw new Error("No JD available to publish");
+    return {
+      title: jd.title,
+      content: JSON.stringify(jd),
+      ownership,
+      jd_score: jd.jd_score ?? null,
+      context: jd.summary ?? null,
+      skills: jd.skills ?? [],
+      resume_skills: jd.resume_skills ?? [],
+      metadata: jd.metadata ?? {},
+    };
+  }
+
+  function resolvePdfUrl(fileUrl: string | null): string | null {
+    if (!fileUrl) return null;
+    return fileUrl.startsWith("http")
+      ? fileUrl
+      : `${BACKEND_URL}/${fileUrl.startsWith("/") ? fileUrl.substring(1) : fileUrl}`;
+  }
+
+  useEffect(() => {
+    if (!jd) return;
+    let active = true;
+    async function buildPreview() {
+      setPreviewing(true);
+      setError(null);
+      try {
+        const preview = await jdApi.preview(payloadFor("personal"));
+        if (active) setPreviewPdfUrl(resolvePdfUrl(preview.pdf_url));
+      } catch (e) {
+        if (active) setError(e instanceof Error ? e.message : "Preview failed");
+      } finally {
+        if (active) setPreviewing(false);
+      }
+    }
+    setPreviewPdfUrl(null);
+    void buildPreview();
+    return () => {
+      active = false;
+    };
+    // Preview should refresh when the reviewed JD changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(jd)]);
+
+  async function handlePublish(ownership: "personal" | "public") {
     setLoading(true);
     setError(null);
     try {
-      const published = await jdApi.publish(savedJD?.id ?? 0, {
-        title: currentJD.title,
-        content: JSON.stringify(currentJD),
-        ownership,
-        jd_score: currentJD.jd_score ?? null,
-        context: currentJD.summary ?? null,
-        skills: currentJD.skills ?? [],
-        resume_skills: currentJD.resume_skills ?? [],
-        metadata: currentJD.metadata ?? {},
-      });
+      const published = await jdApi.publish(savedJD?.id ?? 0, payloadFor(ownership));
       onPublished(published);
+      setPreviewPdfUrl(resolvePdfUrl(published.pdf_url));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Publish failed");
     } finally {
@@ -50,33 +85,39 @@ export default function PublishTab({
     }
   }
 
+  if (!jd) return <div className="empty-state">Generate and review a JD before publishing.</div>;
+
   return (
     <div className="panel stack">
       <div>
-        <h2>{currentJD.title}</h2>
-        <p className="muted">Choose where this JD should live, then publish it to the database.</p>
+        <h2>{jd.title}</h2>
+        <p className="muted">The PDF preview is generated automatically from the reviewed JD.</p>
       </div>
-      <div className="segmented">
-        {(["personal", "public"] as const).map((value) => (
-          <button key={value} className={ownership === value ? "active" : ""} onClick={() => setOwnership(value)}>
-            {value}
-          </button>
-        ))}
+      <div className="publish-actions">
+        {(previewPdfUrl || publishedPdfUrl) && (
+          <a href={previewPdfUrl || publishedPdfUrl || ""} download className="secondary-button">
+            Download
+          </a>
+        )}
+        <button className="primary-button" disabled={loading} onClick={() => handlePublish("personal")}>
+          {loading ? "Publishing..." : "Publish as Personal"}
+        </button>
+        <button className="primary-button" disabled={loading} onClick={() => handlePublish("public")}>
+          {loading ? "Publishing..." : "Publish as Public"}
+        </button>
       </div>
+      {previewing && <div className="empty-state">Building PDF preview...</div>}
+      {(previewPdfUrl || publishedPdfUrl) && (
+        <div className="pdf-preview-frame">
+          <iframe title="JD PDF preview" src={previewPdfUrl || publishedPdfUrl || ""} />
+        </div>
+      )}
       {savedJD && (
         <div className="success stack">
           <p>Published as JD #{savedJD.id}</p>
-          {publishedPdfUrl && (
-            <a href={publishedPdfUrl} target="_blank" rel="noreferrer" className="secondary-button" style={{ width: "fit-content" }}>
-              Open
-            </a>
-          )}
         </div>
       )}
       {error && <p className="error">{error}</p>}
-      <button className="primary-button" disabled={loading} onClick={handlePublish}>
-        {loading ? "Publishing..." : "Publish JD"}
-      </button>
     </div>
   );
 }

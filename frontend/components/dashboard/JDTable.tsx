@@ -24,13 +24,16 @@ function resolveFileUrl(fileUrl: string | null): string | null {
 }
 
 export default function JDTable() {
-  const { jds, total, loading, error, setJDs, setTotal } = useJDs();
+  const [page, setPage] = useState(1);
+  const perPage = 12;
+  const { jds, total, loading, error, setJDs, setTotal } = useJDs(page, perPage);
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(
     () => jds.filter((jd) => jd.title.toLowerCase().includes(query.toLowerCase())),
     [jds, query],
   );
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   async function handleDelete(id: number) {
     if (!confirm("Delete this JD?")) return;
@@ -52,7 +55,17 @@ export default function JDTable() {
       {filtered.length === 0 ? (
         <div className="empty-state">No JDs found.</div>
       ) : (
-        <table>
+        <table className="jd-dashboard-table">
+          <colgroup>
+            <col className="jd-col-title" />
+            <col className="jd-col-owner" />
+            <col className="jd-col-score" />
+            <col className="jd-col-skills" />
+            <col className="jd-col-creator" />
+            <col className="jd-col-pdf" />
+            <col className="jd-col-created" />
+            <col className="jd-col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>Title</th>
@@ -70,6 +83,15 @@ export default function JDTable() {
           </tbody>
         </table>
       )}
+      <div className="table-pagination">
+        <button className="secondary-button" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
+          Previous
+        </button>
+        <span className="muted small">Page {page} of {totalPages}</span>
+        <button className="secondary-button" disabled={page >= totalPages} onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}>
+          Next
+        </button>
+      </div>
     </div>
   );
 }
@@ -93,15 +115,15 @@ function JDRow({ jd, onDelete }: { jd: JD; onDelete: () => void }) {
 
   return (
     <tr>
-      <td>
+      <td className="jd-title-cell">
         <strong>{jd.title}</strong>
         <span className="muted small line-clamp">{getJDSummary(jd)}</span>
       </td>
       <td><span className="badge">{jd.ownership}</span></td>
       <td>{jd.jd_score ?? "-"}</td>
-      <td>{jd.skills?.slice(0, 3).join(", ") || "-"}</td>
-      <td>{jd.created_by ?? "-"}</td>
-      <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">Open</a> : "-"}</td>
+      <td className="truncate-cell" title={jd.skills?.join(", ") || "-"}>{jd.skills?.slice(0, 3).join(", ") || "-"}</td>
+      <td className="truncate-cell" title={jd.created_by_name || "-"}>{jd.created_by_name || "-"}</td>
+      <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">Preview</a> : "-"}</td>
       <td>{formatDate(jd.created_at)}</td>
       <td><button className="danger-button" onClick={onDelete}>Delete</button></td>
     </tr>

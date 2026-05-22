@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 
 export function useAuth() {
-  const { token, userName, accessType, logout } = useAuthStore();
+  const { token, userName, accessType, hydrated, logout } = useAuthStore();
   const router = useRouter();
 
   function signOut() {
@@ -13,5 +13,5 @@ export function useAuth() {
     router.push("/login");
   }
 
-  return { token, userName, accessType, isAuthenticated: Boolean(token), signOut };
+  return { token, userName, accessType, hydrated, isAuthenticated: Boolean(token), signOut };
 }

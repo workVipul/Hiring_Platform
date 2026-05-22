@@ -19,7 +19,7 @@ function skillWeight(jd: GeneratedJD, skill: string, maxFrequency: number): numb
 }
 
 export default function SkillGraph({ jd }: { jd: GeneratedJD }) {
-  const skills = (jd.skills ?? []).filter(Boolean).slice(0, 8);
+  const skills = Array.from(new Set((jd.skills ?? []).filter(isTechnicalSkill))).slice(0, 8);
   const frequencies = skills.map((skill) => contentFrequency(jd, skill));
   const maxFrequency = Math.max(...frequencies, 0);
 
@@ -38,4 +38,12 @@ export default function SkillGraph({ jd }: { jd: GeneratedJD }) {
       ))}
     </div>
   );
+}
+
+function isTechnicalSkill(skill: string): boolean {
+  const value = skill.trim().toLowerCase();
+  if (!value || value.length > 40) return false;
+  const blocked = ["excellent", "communication", "collaboration", "leadership", "problem", "team management", "hybrid", "agile methodology"];
+  if (blocked.some((term) => value.includes(term))) return false;
+  return true;
 }

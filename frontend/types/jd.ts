@@ -4,6 +4,7 @@ export interface GeneratedJD {
   responsibilities?: string[];
   requirements?: string[];
   nice_to_have?: string[];
+  soft_skills?: string[];
   compensation?: string;
   about_company?: string;
   jd_score?: number | null;
@@ -21,6 +22,7 @@ export interface JD {
   jd_score: number | null;
   pdf_url: string | null;
   created_by: number | null;
+  created_by_name?: string | null;
   context: string | null;
   skills: string[];
   resume_skills: string[];
@@ -32,6 +34,8 @@ export interface JD {
 export interface JDListResponse {
   items: JD[];
   total: number;
+  page: number;
+  per_page: number;
 }
 
 export interface JDCreate {

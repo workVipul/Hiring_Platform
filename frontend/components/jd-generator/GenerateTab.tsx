@@ -8,6 +8,16 @@ import type { GeneratedJD } from "@/types/jd";
 type InputType = "text" | "voice" | "chat";
 type ChatMessage = { role: "recruiter" | "assistant"; content: string };
 
+const chatQuestions = [
+  "What role title are we hiring for?",
+  "What experience range or seniority should candidates have?",
+  "Which must-have technical skills are required?",
+  "What are the core responsibilities for this role?",
+  "Where is the role based, and is it onsite, hybrid, or remote?",
+  "Any nice-to-have skills, domain context, or compensation notes?",
+];
+const followUpQuestion = "Any other information to include? If not, choose Generate now.";
+
 type SpeechRecognitionResultItem = {
   transcript: string;
 };
@@ -54,7 +64,7 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
   const [transcribing, setTranscribing] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Share the role, seniority, tech stack, location, and must-have skills." },
+    { role: "assistant", content: chatQuestions[0] },
   ]);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
@@ -65,11 +75,12 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     return rawInput;
   }, [inputType, messages, rawInput]);
 
-  async function handleGenerate() {
+  async function handleGenerate(inputOverride?: string) {
+    const input = inputOverride ?? generationInput;
     setLoading(true);
     setError(null);
     try {
-      const result = await jdApi.generate(generationInput, inputType);
+      const result = await jdApi.generate(input, inputType);
       onGenerated(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
@@ -158,8 +169,32 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
   function addChatMessage() {
     const content = chatDraft.trim();
     if (!content) return;
-    setMessages((prev) => [...prev, { role: "recruiter", content }]);
+    if (inputType === "chat" && answeredChatQuestions() >= chatQuestions.length) {
+      const nextMessages = [...messages, { role: "recruiter" as const, content }];
+      setMessages(nextMessages);
+      setChatDraft("");
+      void handleGenerate(formatMessages(nextMessages));
+      return;
+    }
+
+    setMessages((prev) => {
+      const answeredCount = prev.filter((message) => message.role === "recruiter").length;
+      const nextQuestion = chatQuestions[answeredCount + 1] ?? followUpQuestion;
+      return [
+        ...prev,
+        { role: "recruiter", content },
+        ...(nextQuestion ? [{ role: "assistant" as const, content: nextQuestion }] : []),
+      ];
+    });
     setChatDraft("");
+  }
+
+  function answeredChatQuestions() {
+    return messages.filter((message) => message.role === "recruiter").length;
+  }
+
+  function generateChatNow() {
+    void handleGenerate(formatMessages(messages));
   }
 
   return (
@@ -220,6 +255,12 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
               </div>
             ))}
           </div>
+          <div className="chat-progress">
+            <span className="muted small">{Math.min(answeredChatQuestions(), chatQuestions.length)} of {chatQuestions.length} details captured</span>
+            <div className="chat-progress-track">
+              <div style={{ width: `${Math.min(100, (answeredChatQuestions() / chatQuestions.length) * 100)}%` }} />
+            </div>
+          </div>
           <div className="chat-input-row">
             <input
               value={chatDraft}
@@ -227,22 +268,33 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
               onKeyDown={(e) => {
                 if (e.key === "Enter") addChatMessage();
               }}
-              placeholder="Add role detail, skill requirement, location, budget, or hiring notes"
+              placeholder={answeredChatQuestions() >= chatQuestions.length ? "Add optional extra info" : "Add role detail, skill requirement, location, budget, or hiring notes"}
             />
             <button className="secondary-button" onClick={addChatMessage}>Add</button>
           </div>
           <div className="inline-actions">
-            <button className="ghost-button" onClick={() => setMessages(messages.slice(0, 1))}>Clear chat</button>
+            {answeredChatQuestions() >= chatQuestions.length && (
+              <button className="primary-button" disabled={loading} onClick={generateChatNow}>
+                {loading ? "Generating..." : "No extra info"}
+              </button>
+            )}
+            <button className="ghost-button" onClick={() => setMessages([{ role: "assistant", content: chatQuestions[0] }])}>Clear chat</button>
           </div>
         </div>
       )}
 
       {error && <p className="error">{error}</p>}
-      <button className="primary-button" disabled={loading || generationInput.trim().length < 10} onClick={handleGenerate}>
-        {loading ? "Generating..." : `Generate JD from ${inputType === "voice" ? "voice & video" : inputType}`}
-      </button>
+      {inputType !== "chat" && (
+        <button className="primary-button" disabled={loading || generationInput.trim().length < 10} onClick={() => handleGenerate()}>
+          {loading ? "Generating..." : `Generate JD from ${inputType === "voice" ? "voice & video" : inputType}`}
+        </button>
+      )}
     </div>
   );
+}
+
+function formatMessages(messages: ChatMessage[]): string {
+  return messages.map((message) => `${message.role}: ${message.content}`).join("\n");
 }
 
 function audioBufferToWav(buffer: AudioBuffer): Blob {

@@ -11,6 +11,8 @@ bcrypt<4
 httpx
 email-validator
 python-multipart
+reportlab
+pypdf
 
 # Optional: use Alembic for migrations in production
 # alembic

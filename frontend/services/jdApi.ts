@@ -33,7 +33,13 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
 }
 
 export const jdApi = {
-  list: (): Promise<JDListResponse> => req("/api/v1/jds"),
+  list: (page?: number, perPage?: number): Promise<JDListResponse> => {
+    const params = new URLSearchParams();
+    if (page) params.set("page", String(page));
+    if (perPage) params.set("per_page", String(perPage));
+    const query = params.toString();
+    return req(`/api/v1/jds${query ? `?${query}` : ""}`);
+  },
   get: (id: number): Promise<JD> => req(`/api/v1/jds/${id}`),
   upload: (file: File): Promise<JD> => {
     const form = new FormData();
@@ -61,15 +67,16 @@ export const jdApi = {
     }),
   publish: (id: number, payload: JDPublishRequest): Promise<JD> =>
     req(`/api/v1/jds/${id}/publish`, { method: "POST", body: JSON.stringify(payload) }),
+  preview: (payload: JDPublishRequest): Promise<{ pdf_url: string; jd_score: number }> =>
+    req("/api/v1/jds/preview", { method: "POST", body: JSON.stringify(payload) }),
   sourceCandidates: (jdId: number, page = 1, perPage = 20): Promise<{
     jd_id: number;
     jd_title: string;
     search_skills: string[];
+    required_skills: string[];
+    experience_requirement: string | null;
     candidates: any[];
     total: number;
-  }> => req("/api/v1/sourcing/candidates", {
-    method: "POST",
-    body: JSON.stringify({ jd_id: jdId, page, per_page: perPage }),
-  }),
+  }> => req(`/api/v1/sourcing/candidates?jd_id=${jdId}&page=${page}&per_page=${perPage}`),
   delete: (id: number): Promise<void> => req(`/api/v1/jds/${id}`, { method: "DELETE" }),
 };

@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { jdApi } from "@/services/jdApi";
 import type { JD } from "@/types/jd";
 
-export function useJDs() {
+export function useJDs(page?: number, perPage?: number) {
   const [jds, setJDs] = useState<JD[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -15,7 +15,7 @@ export function useJDs() {
     setLoading(true);
     setError(null);
     try {
-      const data = await jdApi.list();
+      const data = await jdApi.list(page, perPage);
       setJDs(data.items);
       setTotal(data.total);
     } catch (e) {
@@ -29,7 +29,7 @@ export function useJDs() {
     // Data loading is the external sync point for this hook.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
-  }, []);
+  }, [page, perPage]);
 
   return { jds, total, loading, error, reload: load, setJDs, setTotal };
 }

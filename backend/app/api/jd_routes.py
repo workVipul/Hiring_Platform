@@ -1,6 +1,6 @@
 import json
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.schemas.jd import (
     JDPublishRequest,
     JDRefineRequest,
     JDResponse,
+    calculate_jd_quality_score,
     normalize_generated_jd,
 )
 from app.services.pdf_service import write_simple_pdf
@@ -25,12 +26,23 @@ from app.services.pdf_service import write_simple_pdf
 router = APIRouter(prefix="/api/v1/jds", tags=["JDs"])
 
 GENERATE_SYSTEM = """You are an expert HR professional.
-Generate a structured, complete Job Description from the hiring context provided.
+Generate an informative, recruiter-ready Wissen Technology Job Description from the hiring context provided.
 Return valid JSON with keys: title, summary, responsibilities, requirements,
-nice_to_have, compensation, about_company, jd_score, skills, resume_skills, metadata.
+nice_to_have, soft_skills, compensation, about_company, jd_score, skills, resume_skills, metadata.
 skills must be extracted from the actual hiring requirements.
 metadata should include useful structured hiring metadata when inferable, such as department,
-seniority, work_mode, location, experience_years, and skill_weights."""
+seniority, work_mode, location, experience_years, and skill_weights.
+Match this section intent: Job Summary, Experience, Location, Mode of Work, Key Responsibilities,
+Qualifications and Required Skills, Good to Have Skills, Soft Skills.
+Write a Job Summary with 4-6 informative sentences covering role purpose, technical scope,
+delivery expectations, collaboration, and impact. Generate 6-8 responsibilities, 8-10
+qualifications/required skills, 3-5 good-to-have skills, and 3-5 soft skills when enough context exists.
+Requirements must be technical qualifications only, written like "Strong expertise in Core Java, Java 8+",
+"Hands-on experience with Spring Boot", "Working knowledge of SQL / NoSQL databases".
+Do not include communication, leadership, problem-solving, work mode, agile process, or standalone skill names in requirements.
+Put communication, collaboration, leadership, and problem-solving in soft_skills.
+Use complete experience phrases such as "4 years" or "4+ years", never just a number.
+Do not repeat the word experience in every requirement. Put experience only in metadata.experience_years."""
 
 REFINE_SYSTEM = """You are refining an existing Job Description based on user instruction.
 Apply the instruction precisely. Return the same JSON structure with modifications applied.
@@ -55,7 +67,7 @@ def upsert_details(db: Session, jd: JD, *, context: str | None, skills: list[str
     detail.metadata_json = metadata
 
 
-def serialize_jd(jd: JD, detail: JDDetail | None = None) -> JDResponse:
+def serialize_jd(jd: JD, detail: JDDetail | None = None, creator_name: str | None = None) -> JDResponse:
     return JDResponse(
         id=jd.id,
         title=jd.title,
@@ -64,6 +76,7 @@ def serialize_jd(jd: JD, detail: JDDetail | None = None) -> JDResponse:
         jd_score=jd.jd_score,
         pdf_url=jd.pdf_url,
         created_by=jd.created_by,
+        created_by_name=creator_name,
         context=detail.context if detail else None,
         skills=detail.skills if detail and isinstance(detail.skills, list) else [],
         resume_skills=detail.resume_skills if detail and isinstance(detail.resume_skills, list) else [],
@@ -81,13 +94,30 @@ def visible_jds_query(db: Session, user: User):
 
 
 @router.get("", response_model=JDListResponse)
-def list_jds(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    jds = visible_jds_query(db, current_user).order_by(JD.created_at.desc()).all()
+def list_jds(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = visible_jds_query(db, current_user)
+    total = query.count()
+    jds = query.order_by(JD.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
     detail_map = {
         detail.jd_id: detail
         for detail in db.query(JDDetail).filter(JDDetail.jd_id.in_([jd.id for jd in jds] or [0])).all()
     }
-    return JDListResponse(items=[serialize_jd(jd, detail_map.get(jd.id)) for jd in jds], total=len(jds))
+    creator_ids = [jd.created_by for jd in jds if jd.created_by]
+    creator_map = {
+        user.id: user.name
+        for user in db.query(User).filter(User.id.in_(creator_ids or [0])).all()
+    }
+    return JDListResponse(
+        items=[serialize_jd(jd, detail_map.get(jd.id), creator_map.get(jd.created_by)) for jd in jds],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
 
 
 @router.get("/{jd_id}", response_model=JDResponse)
@@ -96,16 +126,28 @@ def get_jd(jd_id: int, db: Session = Depends(get_db), current_user: User = Depen
     if not jd:
         raise HTTPException(status_code=404, detail="JD not found")
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
-    return serialize_jd(jd, detail)
+    creator = db.query(User).filter(User.id == jd.created_by).first() if jd.created_by else None
+    return serialize_jd(jd, detail, creator.name if creator else None)
 
 
 @router.post("", response_model=JDResponse, status_code=201)
 def create_jd(payload: JDCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    content = payload.content
+    score = payload.jd_score
+    try:
+        parsed_content = json.loads(content or "{}")
+        if isinstance(parsed_content, dict) and parsed_content:
+            score = calculate_jd_quality_score(parsed_content)
+            parsed_content["jd_score"] = score
+            content = json.dumps(parsed_content)
+    except json.JSONDecodeError:
+        pass
+
     jd = JD(
         title=payload.title,
-        content=payload.content,
+        content=content,
         ownership=validate_ownership(payload.ownership),
-        jd_score=payload.jd_score,
+        jd_score=score,
         pdf_url=payload.pdf_url,
         created_by=current_user.id,
     )
@@ -122,7 +164,7 @@ def create_jd(payload: JDCreate, db: Session = Depends(get_db), current_user: Us
     )
     db.commit()
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
-    return serialize_jd(jd, detail)
+    return serialize_jd(jd, detail, current_user.name)
 
 
 @router.post("/generate", response_model=dict, status_code=201)
@@ -131,8 +173,13 @@ async def generate_jd(payload: JDGenerateRequest):
         llm = get_llm_provider()
         result = await llm.complete_json(
             system=GENERATE_SYSTEM,
-            user=f"Input type: {payload.input_type}\n\nHiring context:\n{payload.raw_input}",
-            max_tokens=3000,
+            user=(
+                f"Input type: {payload.input_type}\n\n"
+                "Generate an informative standardized JD from this reviewed hiring conversation. "
+                "Use only the supplied details; if something is unknown, omit it instead of inventing it.\n\n"
+                f"Hiring context:\n{payload.raw_input}"
+            ),
+            max_tokens=2400,
         )
         return normalize_generated_jd(result)
     except Exception as exc:
@@ -164,7 +211,7 @@ async def refine_jd(jd_id: int, payload: JDRefineRequest, db: Session = Depends(
         result = await llm.complete_json(
             system=REFINE_SYSTEM,
             user=f"Instruction: {payload.instruction}\n\nCurrent JD:\n{current_content}",
-            max_tokens=3000,
+            max_tokens=2400,
         )
         return normalize_generated_jd(result)
     except Exception as exc:
@@ -175,9 +222,11 @@ async def refine_jd(jd_id: int, payload: JDRefineRequest, db: Session = Depends(
 def publish_jd(jd_id: int, payload: JDPublishRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     ownership = validate_ownership(payload.ownership)
     content = payload.content
-    parsed_content = {}
+    parsed_content = None
     try:
-        parsed_content = json.loads(content)
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            parsed_content = parsed
     except json.JSONDecodeError:
         pass
 
@@ -190,7 +239,12 @@ def publish_jd(jd_id: int, payload: JDPublishRequest, db: Session = Depends(get_
         jd.content = content
         jd.ownership = ownership
 
-    jd.jd_score = payload.jd_score
+    if parsed_content is not None:
+        jd.jd_score = calculate_jd_quality_score(parsed_content)
+        parsed_content["jd_score"] = jd.jd_score
+        jd.content = json.dumps(parsed_content)
+    else:
+        jd.jd_score = payload.jd_score
     db.commit()
     db.refresh(jd)
     jd.pdf_url = write_simple_pdf(jd.title, jd.content or "", jd.id)
@@ -198,15 +252,29 @@ def publish_jd(jd_id: int, payload: JDPublishRequest, db: Session = Depends(get_
     upsert_details(
         db,
         jd,
-        context=payload.context or (parsed_content.get("summary") if isinstance(parsed_content, dict) else content),
-        skills=payload.skills or (parsed_content.get("skills", []) if isinstance(parsed_content, dict) else []),
-        resume_skills=payload.resume_skills or (parsed_content.get("resume_skills", []) if isinstance(parsed_content, dict) else []),
-        metadata=payload.metadata or (parsed_content.get("metadata", {}) if isinstance(parsed_content, dict) else {}),
+        context=payload.context or (parsed_content.get("summary") if parsed_content is not None else content),
+        skills=payload.skills or (parsed_content.get("skills", []) if parsed_content is not None else []),
+        resume_skills=payload.resume_skills or (parsed_content.get("resume_skills", []) if parsed_content is not None else []),
+        metadata=payload.metadata or (parsed_content.get("metadata", {}) if parsed_content is not None else {}),
     )
     db.commit()
     db.refresh(jd)
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
-    return serialize_jd(jd, detail)
+    return serialize_jd(jd, detail, current_user.name)
+
+
+@router.post("/preview", response_model=dict)
+def preview_jd(payload: JDPublishRequest, current_user: User = Depends(get_current_user)):
+    try:
+        parsed_content = json.loads(payload.content)
+        if not isinstance(parsed_content, dict):
+            parsed_content = {"summary": payload.content}
+    except json.JSONDecodeError:
+        parsed_content = {"summary": payload.content}
+    parsed_content["jd_score"] = calculate_jd_quality_score(parsed_content)
+    preview_key = f"preview-{current_user.id}"
+    pdf_url = write_simple_pdf(payload.title, json.dumps(parsed_content), preview_key)
+    return {"pdf_url": pdf_url, "jd_score": parsed_content["jd_score"]}
 
 
 @router.put("/{jd_id}", response_model=JDResponse)
@@ -219,6 +287,14 @@ def update_jd(jd_id: int, payload: JDCreate, db: Session = Depends(get_db), curr
     jd.content = payload.content
     jd.ownership = validate_ownership(payload.ownership)
     jd.jd_score = payload.jd_score
+    try:
+        parsed_content = json.loads(payload.content or "{}")
+        if isinstance(parsed_content, dict) and parsed_content:
+            jd.jd_score = calculate_jd_quality_score(parsed_content)
+            parsed_content["jd_score"] = jd.jd_score
+            jd.content = json.dumps(parsed_content)
+    except json.JSONDecodeError:
+        pass
     jd.pdf_url = write_simple_pdf(jd.title, jd.content or "", jd.id)
     upsert_details(
         db,
@@ -231,7 +307,7 @@ def update_jd(jd_id: int, payload: JDCreate, db: Session = Depends(get_db), curr
     db.commit()
     db.refresh(jd)
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
-    return serialize_jd(jd, detail)
+    return serialize_jd(jd, detail, current_user.name)
 
 
 @router.post("/upload", response_model=JDResponse, status_code=201)
@@ -278,7 +354,7 @@ async def upload_and_parse_jd(
         result = await llm.complete_json(
             system=GENERATE_SYSTEM,
             user=f"Hiring context extracted from uploaded file ({filename}):\n{raw_text}",
-            max_tokens=3000,
+            max_tokens=2400,
         )
         normalized = normalize_generated_jd(result)
     except Exception as exc:
@@ -315,7 +391,7 @@ async def upload_and_parse_jd(
     db.refresh(jd)
     
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
-    return serialize_jd(jd, detail)
+    return serialize_jd(jd, detail, current_user.name)
 
 
 @router.delete("/{jd_id}", status_code=204)

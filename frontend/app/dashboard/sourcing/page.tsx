@@ -118,7 +118,7 @@ export default function SourcingPage() {
                   accept=".pdf,.txt"
                   onChange={handleFileChange}
                 />
-                <span className="dropzone-icon">📄</span>
+                <span className="dropzone-icon">PDF</span>
                 <div className="dropzone-text">
                   <strong>Drag and drop</strong> or click to upload
                 </div>
@@ -129,7 +129,7 @@ export default function SourcingPage() {
                 className="sourcing-card"
                 onClick={() => setViewMode("existing")}
               >
-                <span className="sourcing-card-icon">🗂️</span>
+                <span className="sourcing-card-icon">JD</span>
                 <h3>Pull from Existing JDs</h3>
                 <p>Browse personal and shared job descriptions already parsed in the system.</p>
               </div>
