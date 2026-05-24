@@ -6,9 +6,18 @@ from app.models.jd import JD
 
 logger = logging.getLogger(__name__)
 
-RANKING_SYSTEM = """You are an expert technical recruiter.
-Score candidate fit against the JD. Return compact JSON only:
-{"candidates":[{"id":"candidate id","skill_match_score":int,"experience_synergy":int,"fit_analysis":"one concise sentence","missing_skills":["skill"],"match_percentage":int}]}"""
+RANKING_SYSTEM = """You are an expert technical recruiter and candidate ranking specialist.
+Rank candidates against the supplied JD intelligence. Return ONLY compact JSON, no markdown:
+{"candidates":[{"id":"candidate id","skill_match_score":int,"experience_synergy":int,"fit_analysis":"one concise sentence","missing_skills":["skill"],"match_percentage":int}]}
+
+Rules:
+- Treat normalized and equivalent technologies as matches, such as Java/Spring Boot for Java development framework,
+  AWS/Azure/GCP for cloud, CI/CD/Jenkins for DevOps, REST/RESTful API for REST APIs.
+- skill_match_score is 0-100 based on matched must-have skills first, then preferred skills.
+- experience_synergy is 0-100 based on candidate seniority or years against experience_min_years and experience_max_years.
+- match_percentage = 0.60*skill_match_score + 0.25*experience_synergy + 0.15*soft/domain fit.
+- Calibrate: 90+ exceptional, 70-89 strong, 50-69 possible, below 50 weak.
+- Be concise and do not penalize candidates for wording differences when the technical meaning is equivalent."""
 
 TECH_ALIASES = {
     "java development framework": {"java", "spring", "spring boot"},
@@ -48,13 +57,70 @@ def skill_matches(required: str, candidate_skills: list[str]) -> bool:
     return False
 
 
-def get_fallback_score(candidate: dict, jd_skills: list[str]) -> dict:
+def as_string_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip(" -*\t") for item in re.split(r"[,;\n]", value) if item.strip(" -*\t")]
+    return []
+
+
+def extract_years(value: object) -> float | None:
+    if value is None:
+        return None
+    match = re.search(r"\d+(\.\d+)?", str(value))
+    return float(match.group(0)) if match else None
+
+
+def seniority_to_years(value: object) -> float | None:
+    lowered = str(value or "").lower()
+    if "intern" in lowered or "fresher" in lowered or "entry" in lowered:
+        return 0
+    if "junior" in lowered:
+        return 1
+    if "mid" in lowered:
+        return 3
+    if "senior" in lowered or "sr" in lowered:
+        return 5
+    if "lead" in lowered or "principal" in lowered or "architect" in lowered:
+        return 8
+    return extract_years(value)
+
+
+def score_experience(candidate: dict, experience_min: float | None, experience_max: float | None, seniority: str | None = None) -> int:
+    candidate_years = seniority_to_years(candidate.get("experience_level"))
+    if candidate_years is None:
+        return 72 if not experience_min else 62
+
+    if experience_min is None and experience_max is None:
+        target_years = seniority_to_years(seniority)
+        if target_years is None:
+            return 75
+        return 90 if candidate_years >= target_years else max(45, int(90 - (target_years - candidate_years) * 12))
+
+    minimum = experience_min or 0
+    maximum = experience_max or max(minimum + 5, minimum)
+    if minimum <= candidate_years <= maximum:
+        return 94
+    if candidate_years > maximum:
+        return max(72, int(94 - min(22, (candidate_years - maximum) * 4)))
+    return max(35, int(94 - (minimum - candidate_years) * 14))
+
+
+def get_fallback_score(
+    candidate: dict,
+    jd_skills: list[str],
+    experience_min: float | None = None,
+    experience_max: float | None = None,
+    seniority: str | None = None,
+) -> dict:
     candidate_skills = candidate.get("skills", [])
     required_skills = [skill for skill in jd_skills if str(skill).strip()]
 
     matched = [skill for skill in required_skills if skill_matches(skill, candidate_skills)]
     missing = [skill for skill in required_skills if skill not in matched]
     skill_score = int(len(matched) / len(required_skills) * 100) if required_skills else 50
+    experience_score = score_experience(candidate, experience_min, experience_max, seniority)
 
     missing_title = [str(skill).strip() for skill in missing][:5]
     overlap_display = ", ".join(str(skill) for skill in matched[:5]) if matched else "none"
@@ -62,10 +128,10 @@ def get_fallback_score(candidate: dict, jd_skills: list[str]) -> dict:
     
     return {
         "skill_match_score": skill_score,
-        "experience_synergy": 70,
+        "experience_synergy": experience_score,
         "fit_analysis": f"Evaluated via keyword heuristics. Overlapping skills: {overlap_display}. Missing skills: {missing_display}.",
         "missing_skills": missing_title,
-        "match_percentage": int(skill_score * 0.6 + 70 * 0.4)
+        "match_percentage": int(skill_score * 0.6 + experience_score * 0.25 + 70 * 0.15)
     }
 
 class CandidateRankingEngine:
@@ -82,16 +148,35 @@ class CandidateRankingEngine:
 
         # Parse JD content safely if it is JSON
         jd_text = jd.content or ""
+        metadata = {}
+        preferred_skills = []
+        must_have_skills = []
+        soft_skills = []
         try:
             parsed_jd = json.loads(jd_text)
             if isinstance(parsed_jd, dict):
-                jd_text = f"Title: {parsed_jd.get('title')}\nSummary: {parsed_jd.get('summary')}\nRequirements: {parsed_jd.get('requirements')}"
+                metadata = parsed_jd.get("metadata") if isinstance(parsed_jd.get("metadata"), dict) else {}
+                preferred_skills = as_string_list(metadata.get("preferred_skills")) or as_string_list(parsed_jd.get("nice_to_have"))
+                must_have_skills = as_string_list(metadata.get("must_have_skills")) or as_string_list(jd_skills)
+                soft_skills = as_string_list(parsed_jd.get("soft_skills"))
+                jd_text = (
+                    f"Title: {parsed_jd.get('title')}\n"
+                    f"Summary: {parsed_jd.get('summary')}\n"
+                    f"Requirements: {parsed_jd.get('requirements')}\n"
+                    f"Preferred: {parsed_jd.get('nice_to_have')}"
+                )
         except Exception:
             pass
 
+        experience_min = extract_years(metadata.get("experience_min_years"))
+        experience_max = extract_years(metadata.get("experience_max_years"))
+        seniority = metadata.get("seniority")
+        if not must_have_skills:
+            must_have_skills = jd_skills
+
         # 1. Pre-score all candidates with fast keyword heuristics
         for cand in candidates:
-            cand["heuristic"] = get_fallback_score(cand, jd_skills)
+            cand["heuristic"] = get_fallback_score(cand, must_have_skills, experience_min, experience_max, seniority)
 
         # 2. Sort by heuristic match percentage descending
         candidates.sort(key=lambda x: x["heuristic"]["match_percentage"], reverse=True)
@@ -119,7 +204,12 @@ class CandidateRankingEngine:
                     "jd": {
                         "title": jd.title,
                         "requirements": jd_text[:1800],
-                        "skills": jd_skills[:15],
+                        "must_have_skills": must_have_skills[:15],
+                        "preferred_skills": preferred_skills[:10],
+                        "soft_skills": soft_skills[:6],
+                        "experience_min_years": experience_min,
+                        "experience_max_years": experience_max,
+                        "seniority": seniority,
                     },
                     "candidates": compact_candidates,
                 },

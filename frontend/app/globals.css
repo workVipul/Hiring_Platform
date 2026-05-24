@@ -722,46 +722,98 @@ tr:hover td {
 
 .skill-graph {
   display: grid;
-  gap: 12px;
+  gap: 14px;
   border-top: 1px solid var(--border);
   padding-top: 18px;
 }
 
-.skill-graph h3 {
+.skill-graph-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.skill-graph-heading h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
 }
 
-.skill-row {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 12px;
-  align-items: center;
+.skill-graph-heading span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
-.skill-row span {
+.skill-row {
+  display: grid;
+  gap: 7px;
+}
+
+.skill-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.skill-row-meta span {
   color: var(--text-primary);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: capitalize;
 }
 
-.skill-track {
-  height: 10px;
+.skill-row-meta em {
+  flex: 0 0 auto;
   border-radius: 99px;
+  padding: 3px 8px;
+  background: rgba(87, 207, 228, 0.12);
+  color: var(--color-navy-medium);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.skill-row.core .skill-row-meta em {
+  background: rgba(10, 34, 70, 0.1);
+  color: var(--color-navy-dark);
+}
+
+.skill-row.supporting .skill-row-meta em {
   background: var(--surface-2);
+  color: var(--text-secondary);
+}
+
+.skill-track {
+  height: 12px;
+  border-radius: 99px;
+  background: #e8ecf2;
   overflow: hidden;
   border: 1px solid var(--border);
+  box-shadow: inset 0 1px 2px rgba(10, 34, 70, 0.08);
 }
 
 .skill-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), var(--success));
+  background: linear-gradient(90deg, var(--color-navy-dark), var(--color-navy-medium), var(--color-cyan));
+  box-shadow: 0 0 8px rgba(87, 207, 228, 0.35);
+}
+
+.skill-row.important .skill-bar {
+  background: linear-gradient(90deg, var(--color-navy-medium), var(--color-cyan));
+}
+
+.skill-row.supporting .skill-bar {
+  background: linear-gradient(90deg, var(--color-slate-blue), var(--color-cyan));
+  opacity: 0.82;
 }
 
 .quality-suggestions {

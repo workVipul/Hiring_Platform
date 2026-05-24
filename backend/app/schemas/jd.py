@@ -111,7 +111,35 @@ def normalize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
             metadata[key] = f"{value:g} years"
         elif isinstance(value, str) and re.fullmatch(r"\d+(\.\d+)?\+?", value.strip()):
             metadata[key] = f"{value.strip()} years"
+
+    for key in ("experience_min_years", "experience_max_years"):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            match = re.search(r"\d+(\.\d+)?", value)
+            if match:
+                number = float(match.group(0))
+                metadata[key] = int(number) if number.is_integer() else number
+
+    if "experience_years" in metadata:
+        min_years, max_years = infer_experience_range(str(metadata["experience_years"]))
+        metadata.setdefault("experience_min_years", min_years)
+        metadata.setdefault("experience_max_years", max_years)
     return metadata
+
+
+def infer_experience_range(text: str) -> tuple[int | None, int | None]:
+    lowered = text.lower()
+    numbers = [int(float(value)) for value in re.findall(r"\d+(?:\.\d+)?", lowered)]
+    if not numbers:
+        return None, None
+    if "less than" in lowered or "under" in lowered or "below" in lowered:
+        return 0, numbers[0]
+    if len(numbers) >= 2:
+        return numbers[0], numbers[1]
+    minimum = numbers[0]
+    if "+" in lowered or "minimum" in lowered or "at least" in lowered:
+        return minimum, minimum + 5
+    return minimum, minimum + 5
 
 
 def normalize_jd_sections(data: dict[str, Any]) -> dict[str, Any]:

@@ -25,28 +25,44 @@ from app.services.pdf_service import write_simple_pdf
 
 router = APIRouter(prefix="/api/v1/jds", tags=["JDs"])
 
-GENERATE_SYSTEM = """You are an expert HR professional.
-Generate an informative, recruiter-ready Wissen Technology Job Description from the hiring context provided.
-Return valid JSON with keys: title, summary, responsibilities, requirements,
-nice_to_have, soft_skills, compensation, about_company, jd_score, skills, resume_skills, metadata.
-skills must be extracted from the actual hiring requirements.
-metadata should include useful structured hiring metadata when inferable, such as department,
-seniority, work_mode, location, experience_years, and skill_weights.
+GENERATE_SYSTEM = """You are an expert technical recruiter and talent intelligence specialist for Wissen Technology.
+Convert the supplied hiring context into a recruiter-ready Job Description and structured hiring intelligence.
+Think like a senior sourcing specialist: infer implicit requirements only when strongly supported, normalize technology names
+(for example React.js to React, GoLang to Go, RESTful APIs to REST APIs), detect seniority, split mandatory and optional skills,
+and prioritize the requirements that matter most for hiring.
+
+Return ONLY valid JSON with these keys: title, summary, responsibilities, requirements, nice_to_have, soft_skills,
+compensation, about_company, jd_score, skills, resume_skills, metadata.
+
+metadata should include useful structured fields when inferable:
+department, seniority, work_mode, location, experience_years, experience_min_years, experience_max_years,
+must_have_skills, preferred_skills, search_synonyms, skill_weights, industry_or_domain.
+Experience extraction rules: "5 years" means min 5 and max 10; "5-10 years" means min 5 and max 10;
+"3+ years" means min 3 and max 8; "less than 5 years" means min 0 and max 5. Keep experience_years as a readable
+phrase such as "4+ years" or "5-10 years".
+skill_weights must be an object of technical skill to integer 0-100, where core must-have skills are highest,
+important adjacent skills are middle, and supporting/nice-to-have skills are lower.
+search_synonyms should contain recruiter/ATS synonyms for the technical skills only.
+
 Match this section intent: Job Summary, Experience, Location, Mode of Work, Key Responsibilities,
 Qualifications and Required Skills, Good to Have Skills, Soft Skills.
 Write a Job Summary with 4-6 informative sentences covering role purpose, technical scope,
 delivery expectations, collaboration, and impact. Generate 6-8 responsibilities, 8-10
 qualifications/required skills, 3-5 good-to-have skills, and 3-5 soft skills when enough context exists.
+
 Requirements must be technical qualifications only, written like "Strong expertise in Core Java, Java 8+",
 "Hands-on experience with Spring Boot", "Working knowledge of SQL / NoSQL databases".
 Do not include communication, leadership, problem-solving, work mode, agile process, or standalone skill names in requirements.
 Put communication, collaboration, leadership, and problem-solving in soft_skills.
-Use complete experience phrases such as "4 years" or "4+ years", never just a number.
-Do not repeat the word experience in every requirement. Put experience only in metadata.experience_years."""
+Do not hallucinate salary, location, certifications, or tools that are not supplied or strongly implied.
+Do not repeat the word experience in every requirement. Put overall experience only in metadata.experience_years."""
 
-REFINE_SYSTEM = """You are refining an existing Job Description based on user instruction.
-Apply the instruction precisely. Return the same JSON structure with modifications applied.
-Return valid JSON only."""
+REFINE_SYSTEM = """You are an expert technical recruiter refining a Wissen Technology Job Description.
+Apply the user instruction precisely while preserving the same JSON structure and current factual constraints.
+Keep technology names normalized, preserve or improve metadata such as must_have_skills, preferred_skills,
+search_synonyms, experience_min_years, experience_max_years, and skill_weights.
+Requirements must stay technical-only; move communication, collaboration, leadership, and problem-solving into soft_skills.
+Return ONLY valid JSON with the same keys as the current JD."""
 
 
 def validate_ownership(ownership: str) -> str:
@@ -175,8 +191,8 @@ async def generate_jd(payload: JDGenerateRequest):
             system=GENERATE_SYSTEM,
             user=(
                 f"Input type: {payload.input_type}\n\n"
-                "Generate an informative standardized JD from this reviewed hiring conversation. "
-                "Use only the supplied details; if something is unknown, omit it instead of inventing it.\n\n"
+                "Generate an informative standardized JD and structured hiring intelligence from this reviewed hiring conversation. "
+                "Use only the supplied details or strongly supported inferences; if something is unknown, omit it instead of inventing it.\n\n"
                 f"Hiring context:\n{payload.raw_input}"
             ),
             max_tokens=2400,
@@ -353,7 +369,13 @@ async def upload_and_parse_jd(
         llm = get_llm_provider()
         result = await llm.complete_json(
             system=GENERATE_SYSTEM,
-            user=f"Hiring context extracted from uploaded file ({filename}):\n{raw_text}",
+            user=(
+                f"Input type: uploaded_jd\n"
+                f"Source file: {filename}\n\n"
+                "Parse and standardize this JD into the Wissen Technology schema. Preserve the original meaning, "
+                "extract structured metadata, normalize technologies, and avoid adding unsupported facts.\n\n"
+                f"Hiring context extracted from uploaded file:\n{raw_text}"
+            ),
             max_tokens=2400,
         )
         normalized = normalize_generated_jd(result)
