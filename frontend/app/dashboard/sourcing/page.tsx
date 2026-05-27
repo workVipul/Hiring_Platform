@@ -222,7 +222,6 @@ export default function SourcingPage() {
                   <tr>
                     <th>JD Name</th>
                     <th>Visibility</th>
-                    <th>Score</th>
                     <th>Skills</th>
                     <th>PDF</th>
                     <th>Sourcing</th>
@@ -239,10 +238,6 @@ export default function SourcingPage() {
                             {jd.ownership === "public" ? "Public" : "Personal"}
                           </span>
                         </td>
-
-
-
-                        <td>{jd.jd_score ?? "-"}</td>
                         <td>{jd.skills?.join(", ") || "-"}</td>
                         <td>
                           {fileUrl ? (

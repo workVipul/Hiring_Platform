@@ -2,14 +2,13 @@ from datetime import datetime
 import re
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class JDCreate(BaseModel):
     title: str
     content: Optional[str] = None
     ownership: str = "personal"
-    jd_score: Optional[int] = Field(default=None, ge=0, le=100)
     pdf_url: Optional[str] = None
     context: Optional[str] = None
     skills: list[str] = []
@@ -31,7 +30,6 @@ class JDPublishRequest(BaseModel):
     ownership: str
     title: str
     content: str
-    jd_score: Optional[int] = Field(default=None, ge=0, le=100)
     pdf_url: Optional[str] = None
     context: Optional[str] = None
     skills: list[str] = []
@@ -44,7 +42,6 @@ class JDResponse(BaseModel):
     title: str
     content: Optional[str]
     ownership: str
-    jd_score: Optional[int]
     pdf_url: Optional[str]
     created_by: Optional[int]
     created_by_name: Optional[str] = None
@@ -74,7 +71,6 @@ class GeneratedJD(BaseModel):
     soft_skills: list[str] = []
     compensation: Any = ""
     about_company: Any = ""
-    jd_score: Optional[int | float] = Field(default=None, ge=0, le=100)
     skills: list[str] = []
     resume_skills: list[str] = []
     metadata: dict[str, Any] = {}
@@ -83,7 +79,7 @@ class GeneratedJD(BaseModel):
 
 
 def normalize_generated_jd(data: dict[str, Any]) -> dict[str, Any]:
-    data["jd_score"] = None
+    data.pop("jd_score", None)
     list_fields = ("responsibilities", "requirements", "nice_to_have", "soft_skills", "skills", "resume_skills")
     for key in list_fields:
         value = data.get(key)
@@ -99,9 +95,7 @@ def normalize_generated_jd(data: dict[str, Any]) -> dict[str, Any]:
 
     data["metadata"] = normalize_metadata(data["metadata"])
     data = normalize_jd_sections(data)
-    normalized = GeneratedJD.model_validate(data).model_dump()
-    normalized["jd_score"] = calculate_jd_quality_score(normalized)
-    return normalized
+    return GeneratedJD.model_validate(data).model_dump()
 
 
 def normalize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -221,40 +215,3 @@ def unique_keep_order(items: list[str]) -> list[str]:
             seen.add(key)
             result.append(item)
     return result
-
-
-def calculate_jd_quality_score(data: dict[str, Any]) -> int:
-    """Score JD completeness from stored content instead of trusting LLM output."""
-    score = 0
-
-    title = str(data.get("title") or "").strip()
-    summary = str(data.get("summary") or "").strip()
-    responsibilities = [x for x in data.get("responsibilities") or [] if str(x).strip()]
-    requirements = [x for x in data.get("requirements") or [] if str(x).strip()]
-    nice_to_have = [x for x in data.get("nice_to_have") or [] if str(x).strip()]
-    skills = [x for x in data.get("skills") or [] if str(x).strip()]
-    resume_skills = [x for x in data.get("resume_skills") or [] if str(x).strip()]
-    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
-
-    if len(title) >= 5:
-        score += 10
-    if len(summary) >= 120:
-        score += 15
-    elif len(summary) >= 50:
-        score += 8
-
-    score += min(15, len(responsibilities) * 3)
-    score += min(18, len(requirements) * 3)
-    score += min(12, len(skills) * 2)
-    score += min(8, len(resume_skills) * 2)
-    score += min(6, len(nice_to_have) * 2)
-
-    metadata_keys = {str(key).lower() for key in metadata}
-    if {"experience_years", "experience", "seniority"} & metadata_keys:
-        score += 8
-    if {"location", "work_mode", "department"} & metadata_keys:
-        score += 5
-    if isinstance(metadata.get("skill_weights"), dict) and metadata["skill_weights"]:
-        score += 3
-
-    return max(0, min(100, score))

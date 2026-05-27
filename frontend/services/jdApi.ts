@@ -67,16 +67,34 @@ export const jdApi = {
     }),
   publish: (id: number, payload: JDPublishRequest): Promise<JD> =>
     req(`/api/v1/jds/${id}/publish`, { method: "POST", body: JSON.stringify(payload) }),
-  preview: (payload: JDPublishRequest): Promise<{ pdf_url: string; jd_score: number }> =>
+  preview: (payload: JDPublishRequest): Promise<{ pdf_url: string }> =>
     req("/api/v1/jds/preview", { method: "POST", body: JSON.stringify(payload) }),
-  sourceCandidates: (jdId: number, page = 1, perPage = 20): Promise<{
+  sourceCandidates: (jdId: number, page = 1, perPage = 20, filters?: {
+    skills?: string[];
+    location?: string;
+    seniority?: string;
+    allCandidates?: boolean;
+  }): Promise<{
     jd_id: number;
     jd_title: string;
     search_skills: string[];
     required_skills: string[];
+    search_location?: string | null;
+    search_seniority?: string | null;
     experience_requirement: string | null;
     candidates: any[];
     total: number;
-  }> => req(`/api/v1/sourcing/candidates?jd_id=${jdId}&page=${page}&per_page=${perPage}`),
+  }> => {
+    const params = new URLSearchParams({
+      jd_id: String(jdId),
+      page: String(page),
+      per_page: String(perPage),
+    });
+    if (filters?.skills?.length) params.set("skills", filters.skills.join(","));
+    if (filters?.location) params.set("location", filters.location);
+    if (filters?.seniority) params.set("seniority", filters.seniority);
+    if (filters?.allCandidates) params.set("all_candidates", "true");
+    return req(`/api/v1/sourcing/candidates?${params.toString()}`);
+  },
   delete: (id: number): Promise<void> => req(`/api/v1/jds/${id}`, { method: "DELETE" }),
 };

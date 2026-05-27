@@ -12,19 +12,20 @@ def build_criteria(
     location: str | None = None,
     seniority: str | None = None
 ) -> str:
-    clauses = []
+    groups = []
     
     # 1. Designation
     if title:
         clean_title = title.strip()
         if clean_title:
-            clauses.append(f"((Designation:contains:{clean_title}))")
+            groups.append(f"((Designation:contains:{clean_title}))")
             
     # 2. Skills
     if skills:
         clean_skills = [s.strip() for s in skills if s.strip()]
-        for skill in clean_skills[:5]:
-            clauses.append(f"((Skill_Set:contains:{skill}))")
+        skill_clauses = [f"((Skill_Set:contains:{skill}))" for skill in clean_skills[:5]]
+        if skill_clauses:
+            groups.append("(" + "or".join(skill_clauses) + ")")
             
     # 3. Experience Level / Seniority
     sen_val = None
@@ -40,18 +41,18 @@ def build_criteria(
             sen_val = "Lead"
             
     if sen_val:
-        clauses.append(f"((Experience_Level:contains:{sen_val}))")
+        groups.append(f"((Experience_Level:contains:{sen_val}))")
         
     # 4. Location
     if location:
         clean_loc = location.strip()
         if clean_loc:
-            clauses.append(f"((Location:contains:{clean_loc}))")
+            groups.append(f"((Location:contains:{clean_loc}))")
             
-    if not clauses:
+    if not groups:
         return ""
         
-    return "or".join(clauses)
+    return "and".join(groups)
 
 class ZohoRecruitService:
     _cached_token = None
@@ -105,19 +106,21 @@ class ZohoRecruitService:
         location: str | None = None,
         seniority: str | None = None,
         page: int = 1,
-        per_page: int = 20
+        per_page: int = 20,
+        all_candidates: bool = False,
     ) -> list[dict]:
         criteria = build_criteria(skills, title, location, seniority)
-        if not criteria:
+        if not criteria and not all_candidates:
             return []
 
         # Construct request URL
-        url = f"{settings.ZOHO_BASE_URL.rstrip('/')}/search"
+        url = settings.ZOHO_BASE_URL.rstrip("/") if all_candidates else f"{settings.ZOHO_BASE_URL.rstrip('/')}/search"
         params = {
-            "criteria": criteria,
             "page": page,
             "per_page": per_page
         }
+        if not all_candidates:
+            params["criteria"] = criteria
 
         headers = {}
         access_token = await cls.get_access_token()

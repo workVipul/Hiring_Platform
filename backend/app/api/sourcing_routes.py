@@ -18,6 +18,10 @@ class SourcingRequest(BaseModel):
     jd_id: int
     page: int = 1
     per_page: int = 20
+    skills: list[str] | None = None
+    location: str | None = None
+    seniority: str | None = None
+    all_candidates: bool = False
 
 def visible_jd(db: Session, user: User, jd_id: int):
     query = db.query(JD).filter(JD.id == jd_id)
@@ -26,7 +30,17 @@ def visible_jd(db: Session, user: User, jd_id: int):
     return query.first()
 
 
-async def build_candidate_response(jd_id: int, page: int, per_page: int, db: Session, current_user: User):
+async def build_candidate_response(
+    jd_id: int,
+    page: int,
+    per_page: int,
+    db: Session,
+    current_user: User,
+    filter_skills: list[str] | None = None,
+    filter_location: str | None = None,
+    filter_seniority: str | None = None,
+    all_candidates: bool = False,
+):
     # 1. Fetch Job Description
     jd = visible_jd(db, current_user, jd_id)
     if not jd:
@@ -69,26 +83,30 @@ async def build_candidate_response(jd_id: int, page: int, per_page: int, db: Ses
         except Exception:
             pass
 
-    if not skills and jd.title:
+    if not skills and jd.title and not all_candidates:
         skills = [jd.title]
 
-    if not skills:
+    if not skills and not all_candidates:
         raise HTTPException(
             status_code=400, 
             detail="Job Description lacks skills or title for Zoho criteria building"
         )
 
-    # Limit maximum skills used for search criteria to prevent overly long Zoho queries
-    search_skills = skills[:5]
+    # Recruiter-selected filters are applied before Zoho fetch and before LLM ranking.
+    selected_skills = [skill for skill in (filter_skills or []) if str(skill).strip()]
+    search_skills = [] if all_candidates else (selected_skills or skills)[:5]
+    search_location = None if all_candidates else (filter_location or location)
+    search_seniority = None if all_candidates else (filter_seniority or seniority)
 
-    # 3. Query candidates from Zoho Recruit demo portal with skills, title, location, and seniority
+    # 3. Query candidates from Zoho Recruit with AND criteria across title, skills, location, and seniority.
     candidates = await ZohoRecruitService.fetch_candidates(
         skills=search_skills,
         title=jd.title,
-        location=location,
-        seniority=seniority,
+        location=search_location,
+        seniority=search_seniority,
         page=page,
-        per_page=per_page
+        per_page=per_page,
+        all_candidates=all_candidates,
     )
 
     # 4. Rank candidates using LLM engine
@@ -103,6 +121,8 @@ async def build_candidate_response(jd_id: int, page: int, per_page: int, db: Ses
         "jd_title": jd.title,
         "search_skills": search_skills,
         "required_skills": skills,
+        "search_location": search_location,
+        "search_seniority": search_seniority,
         "experience_requirement": experience_requirement or seniority,
         "candidates": ranked_candidates,
         "total": len(ranked_candidates)
@@ -114,10 +134,15 @@ async def source_candidates(
     jd_id: int = Query(..., ge=1),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    skills: str | None = Query(None),
+    location: str | None = Query(None),
+    seniority: str | None = Query(None),
+    all_candidates: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await build_candidate_response(jd_id, page, per_page, db, current_user)
+    filter_skills = [skill.strip() for skill in (skills or "").split(",") if skill.strip()] or None
+    return await build_candidate_response(jd_id, page, per_page, db, current_user, filter_skills, location, seniority, all_candidates)
 
 
 @router.post("/candidates")
@@ -126,4 +151,14 @@ async def source_candidates_legacy(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return await build_candidate_response(payload.jd_id, payload.page, payload.per_page, db, current_user)
+    return await build_candidate_response(
+        payload.jd_id,
+        payload.page,
+        payload.per_page,
+        db,
+        current_user,
+        payload.skills,
+        payload.location,
+        payload.seniority,
+        payload.all_candidates,
+    )

@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
+import logging
 
 from app.core.config import settings
 from app.db.session import Base, engine
+from sqlalchemy import inspect, text
 
 # Import all models so SQLAlchemy registers them before create_all runs.
 # If you skip this, Base.metadata won't know about the JD table.
@@ -47,6 +49,24 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 # Creates tables that don't exist yet. Safe to run on every startup.
 # For production, replace with Alembic migrations.
 Base.metadata.create_all(bind=engine)
+
+logger = logging.getLogger(__name__)
+
+
+def drop_legacy_jd_score_column() -> None:
+    try:
+        inspector = inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("jds")}
+        if "jd_score" not in columns:
+            return
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE jds DROP COLUMN jd_score"))
+        logger.info("Dropped legacy jds.jd_score column.")
+    except Exception as exc:
+        logger.warning("Could not drop legacy jds.jd_score column: %s", exc)
+
+
+drop_legacy_jd_score_column()
 
 # ---- Routes ----
 app.include_router(auth_router)

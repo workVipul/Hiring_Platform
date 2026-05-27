@@ -40,7 +40,7 @@ WISSEN_SITES = [
     ("Wissen Thought Leadership", "wissen.com/articles", "https://www.wissen.com/articles/"),
 ]
 
-
+ 
 def write_simple_pdf(title: str, content: str, jd_id: int | str) -> str:
     uploads_dir = Path(settings.UPLOADS_DIR)
     uploads_dir.mkdir(parents=True, exist_ok=True)

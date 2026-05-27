@@ -50,7 +50,7 @@ export default function JDGeneratorPage() {
       // Re-push a state to lock user on current page while confirming
       window.history.pushState(null, "", window.location.href);
 
-      setPendingNavigationAction(() => () => {
+      setPendingNavigationAction(() => {
         setGeneratedJD(null);
         window.history.go(-2);
       });
@@ -73,7 +73,7 @@ export default function JDGeneratorPage() {
 
   const handleTabClick = (tab: Tab) => {
     if (generatedJD && !savedJD && tab === "generate") {
-      setPendingNavigationAction(() => () => {
+      setPendingNavigationAction(() => {
         setGeneratedJD(null);
         setActive(tab);
       });

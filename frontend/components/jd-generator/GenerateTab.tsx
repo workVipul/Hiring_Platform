@@ -1,22 +1,61 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import ConfirmDialog from "@/components/dashboard/ConfirmDialog";
 import { jdApi } from "@/services/jdApi";
 import type { GeneratedJD } from "@/types/jd";
 
 type InputType = "text" | "voice" | "chat";
 type ChatMessage = { role: "recruiter" | "assistant"; content: string };
 
-const chatQuestions = [
-  "What role title are we hiring for?",
-  "What experience range or seniority should candidates have?",
-  "Which must-have technical skills are required?",
-  "What are the core responsibilities for this role?",
-  "Where is the role based, and is it onsite, hybrid, or remote?",
-  "Any nice-to-have skills, domain context, or compensation notes?",
+const inputChecklist = [
+  {
+    id: "title",
+    label: "Role title",
+    hint: "Example: Senior Java Architect",
+    question: "What role title are we hiring for?",
+    pattern: /\b(role|title|position|hiring for|job title|architect|engineer|developer|manager|analyst|consultant|lead)\b/i,
+  },
+  {
+    id: "experience",
+    label: "Experience range",
+    hint: "Years, seniority, or level",
+    question: "What experience range or seniority should candidates have?",
+    pattern: /\b(experience|years?|yrs?|senior|junior|mid[- ]level|lead|principal|fresher|\d+\s*\+?\s*(years?|yrs?))\b/i,
+  },
+  {
+    id: "skills",
+    label: "Must-have skills",
+    hint: "Core technologies and tools",
+    question: "Which must-have technical skills are required?",
+    pattern: /\b(skill|must[- ]have|required|java|python|react|node|aws|azure|sql|spring|kubernetes|docker|microservices|api|angular|devops|testing)\b/i,
+  },
+  {
+    id: "responsibilities",
+    label: "Responsibilities",
+    hint: "What the hire will own",
+    question: "What are the core responsibilities for this role?",
+    pattern: /\b(responsibility|own|deliver|design|build|manage|lead|develop|implement|collaborate|review|architect)\b/i,
+  },
+  {
+    id: "location",
+    label: "Location and work mode",
+    hint: "City plus onsite, hybrid, or remote",
+    question: "Where is the role based, and is it onsite, hybrid, or remote?",
+    pattern: /\b(location|onsite|on-site|hybrid|remote|work mode|office|bangalore|bengaluru|pune|mumbai|chennai|hyderabad|delhi|noida|gurgaon|gurugram)\b/i,
+  },
+  {
+    id: "extras",
+    label: "Nice-to-have or context",
+    hint: "Domain, compensation, shift, team notes",
+    question: "Any nice-to-have skills, domain context, or compensation notes?",
+    pattern: /\b(nice[- ]to[- ]have|good[- ]to[- ]have|preferred|domain|compensation|salary|budget|shift|notice|client|industry|context|fintech|banking|healthcare|retail)\b/i,
+  },
 ];
+const chatQuestions = inputChecklist.map((item) => item.question);
 const followUpQuestion = "Any other information to include? If not, choose Generate now.";
+const generationPromptPlaceholder = "Example: Generate a JD for a Senior Java Architect with 8-12 years of experience in Bangalore, hybrid mode. Must-have skills are Core Java, Spring Boot, microservices, REST APIs, SQL, AWS, and system design. The person will lead architecture, guide engineers, review designs, and own delivery quality. Good to have Kafka, Kubernetes, fintech domain exposure, and strong stakeholder communication.";
 
 type SpeechRecognitionResultItem = {
   transcript: string;
@@ -63,10 +102,13 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [pendingGenerationInput, setPendingGenerationInput] = useState<string | null>(null);
+  const [missingChecklistItems, setMissingChecklistItems] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "assistant", content: chatQuestions[0] },
   ]);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
 
   const generationInput = useMemo(() => {
     if (inputType === "chat") {
@@ -75,8 +117,21 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     return rawInput;
   }, [inputType, messages, rawInput]);
 
-  async function handleGenerate(inputOverride?: string) {
-    const input = inputOverride ?? generationInput;
+  const checklistStatus = useMemo(() => {
+    if (inputType === "chat") {
+      return assessChatCompleteness(answeredChatQuestions());
+    }
+    return assessInputCompleteness(generationInput);
+  }, [generationInput, inputType, messages]);
+
+  useEffect(() => {
+    if (inputType !== "chat") return;
+    const chatLog = chatLogRef.current;
+    if (!chatLog) return;
+    chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: "smooth" });
+  }, [inputType, messages]);
+
+  async function executeGenerate(input: string) {
     setLoading(true);
     setError(null);
     try {
@@ -87,6 +142,18 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleGenerate(inputOverride?: string) {
+    const input = inputOverride ?? generationInput;
+    const status = inputType === "chat" ? assessChatCompleteness(countRecruiterAnswers(input)) : assessInputCompleteness(input);
+    const missingItems = status.filter((item) => !item.complete).map((item) => item.label);
+    if (missingItems.length > 0) {
+      setMissingChecklistItems(missingItems);
+      setPendingGenerationInput(input);
+      return;
+    }
+    await executeGenerate(input);
   }
 
   function startVoiceCapture() {
@@ -197,100 +264,167 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     void handleGenerate(formatMessages(messages));
   }
 
+  const tabLabels: Record<InputType, string> = {
+    text: "Text",
+    voice: "Voice & Video",
+    chat: "Chat",
+  };
+
   return (
-    <div className="panel stack">
-      <div className="segmented">
-        {(["text", "voice", "chat"] as const).map((type) => (
-          <button key={type} className={inputType === type ? "active" : ""} onClick={() => setInputType(type)}>
-            {type === "voice" ? "voice & video" : type}
-          </button>
-        ))}
-      </div>
-
-      {inputType === "text" && (
-        <textarea
-          value={rawInput}
-          onChange={(e) => setRawInput(e.target.value)}
-          placeholder="Paste hiring context, notes, transcript, or role requirements..."
-          rows={12}
-        />
-      )}
-
-      {inputType === "voice" && (
-        <div className="stack">
-          <div className="voice-controls">
-            <button className={listening ? "danger-button" : "secondary-button"} onClick={listening ? stopVoiceCapture : startVoiceCapture}>
-              {listening ? "Stop recording" : "Start recording"}
+    <div className="generate-layout">
+      <div className="panel stack generate-input-panel">
+        <div className="segmented">
+          {(["text", "voice", "chat"] as const).map((type) => (
+            <button key={type} className={inputType === type ? "active" : ""} onClick={() => setInputType(type)}>
+              {tabLabels[type]}
             </button>
-            <button className="ghost-button" onClick={() => setRawInput("")}>Clear transcript</button>
-            <span className={listening ? "recording-pill active" : "recording-pill"}>{listening ? "Listening" : "Idle"}</span>
-          </div>
-          <div className="upload-row">
-            <input
-              type="file"
-              accept="audio/*,video/*,.mp3,.mp4,.mpeg,.mpga,.m4a,.mov,.avi,.wav,.webm"
-              onChange={handleFileChange}
-              disabled={extracting || transcribing}
-            />
-            <button className="secondary-button" disabled={!audioFile || transcribing || extracting} onClick={transcribeUploadedVoice}>
-              {transcribing ? "Transcribing..." : extracting ? "Extracting audio..." : "Transcribe upload"}
-            </button>
-          </div>
+          ))}
+        </div>
+
+        {inputType === "text" && (
           <textarea
             value={rawInput}
             onChange={(e) => setRawInput(e.target.value)}
-            placeholder="Your dictated hiring context will appear here. You can edit it before generating."
+            placeholder={generationPromptPlaceholder}
             rows={12}
           />
-        </div>
-      )}
+        )}
 
-      {inputType === "chat" && (
-        <div className="chat-builder">
-          <div className="chat-log">
-            {messages.map((message, index) => (
-              <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}>
-                <span>{message.role}</span>
-                <p>{message.content}</p>
-              </div>
-            ))}
+        {inputType === "voice" && (
+          <div className="stack">
+            <div className="voice-controls">
+              <button className={listening ? "danger-button" : "secondary-button"} onClick={listening ? stopVoiceCapture : startVoiceCapture}>
+                {listening ? "Stop recording" : "Start recording"}
+              </button>
+              <button className="ghost-button" onClick={() => setRawInput("")}>Clear transcript</button>
+              <span className={listening ? "recording-pill active" : "recording-pill"}>{listening ? "Listening" : "Idle"}</span>
+            </div>
+            <div className="upload-row">
+              <input
+                type="file"
+                accept="audio/*,video/*,.mp3,.mp4,.mpeg,.mpga,.m4a,.mov,.avi,.wav,.webm"
+                onChange={handleFileChange}
+                disabled={extracting || transcribing}
+              />
+              <button className="secondary-button" disabled={!audioFile || transcribing || extracting} onClick={transcribeUploadedVoice}>
+                {transcribing ? "Transcribing..." : extracting ? "Extracting audio..." : "Transcribe upload"}
+              </button>
+            </div>
+            <textarea
+              value={rawInput}
+              onChange={(e) => setRawInput(e.target.value)}
+              placeholder={generationPromptPlaceholder}
+              rows={12}
+            />
           </div>
-          <div className="chat-progress">
-            <span className="muted small">{Math.min(answeredChatQuestions(), chatQuestions.length)} of {chatQuestions.length} details captured</span>
-            <div className="chat-progress-track">
-              <div style={{ width: `${Math.min(100, (answeredChatQuestions() / chatQuestions.length) * 100)}%` }} />
+        )}
+
+        {inputType === "chat" && (
+          <div className="chat-builder">
+            <div className="chat-log" ref={chatLogRef}>
+              {messages.map((message, index) => (
+                <div key={`${message.role}-${index}`} className={`chat-message ${message.role}`}>
+                  <span>{message.role}</span>
+                  <p>{message.content}</p>
+                </div>
+              ))}
+            </div>
+            <div className="chat-progress">
+              <span className="muted small">{Math.min(answeredChatQuestions(), chatQuestions.length)} of {chatQuestions.length} details captured</span>
+              <div className="chat-progress-track">
+                <div style={{ width: `${Math.min(100, (answeredChatQuestions() / chatQuestions.length) * 100)}%` }} />
+              </div>
+            </div>
+            <div className="chat-input-row">
+              <input
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") addChatMessage();
+                }}
+                placeholder={answeredChatQuestions() >= chatQuestions.length ? "Add optional extra info" : "Add role detail, skill requirement, location, budget, or hiring notes"}
+              />
+              <button className="secondary-button" onClick={addChatMessage}>Add</button>
+            </div>
+            <div className="inline-actions">
+              {answeredChatQuestions() >= chatQuestions.length && (
+                <button className="primary-button" disabled={loading} onClick={generateChatNow}>
+                  {loading ? "Generating..." : "No extra info"}
+                </button>
+              )}
+              <button className="ghost-button" onClick={() => setMessages([{ role: "assistant", content: chatQuestions[0] }])}>Clear chat</button>
             </div>
           </div>
-          <div className="chat-input-row">
-            <input
-              value={chatDraft}
-              onChange={(e) => setChatDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addChatMessage();
-              }}
-              placeholder={answeredChatQuestions() >= chatQuestions.length ? "Add optional extra info" : "Add role detail, skill requirement, location, budget, or hiring notes"}
-            />
-            <button className="secondary-button" onClick={addChatMessage}>Add</button>
-          </div>
-          <div className="inline-actions">
-            {answeredChatQuestions() >= chatQuestions.length && (
-              <button className="primary-button" disabled={loading} onClick={generateChatNow}>
-                {loading ? "Generating..." : "No extra info"}
-              </button>
-            )}
-            <button className="ghost-button" onClick={() => setMessages([{ role: "assistant", content: chatQuestions[0] }])}>Clear chat</button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {error && <p className="error">{error}</p>}
-      {inputType !== "chat" && (
-        <button className="primary-button" disabled={loading || generationInput.trim().length < 10} onClick={() => handleGenerate()}>
-          {loading ? "Generating..." : `Generate JD from ${inputType === "voice" ? "voice & video" : inputType}`}
-        </button>
-      )}
+        {error && <p className="error">{error}</p>}
+        {inputType !== "chat" && (
+          <button className="primary-button" disabled={loading || generationInput.trim().length < 10} onClick={() => handleGenerate()}>
+            {loading ? "Generating..." : "Generate JD"}
+          </button>
+        )}
+      </div>
+
+      <aside className="panel jd-input-checklist">
+        <div>
+          <p className="eyebrow">Input checklist</p>
+          <h2>Before generating</h2>
+          <p className="muted small">Capture these details once to avoid repeated JD generation calls.</p>
+        </div>
+        <div className="checklist-items">
+          {checklistStatus.map((item, index) => (
+            <div key={item.id} className={item.complete ? "checklist-item complete" : "checklist-item"}>
+              <span>{item.complete ? "OK" : index + 1}</span>
+              <div>
+                <strong>{item.label}</strong>
+                <p>{item.hint}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      <ConfirmDialog
+        open={pendingGenerationInput !== null}
+        title="Generate with missing context?"
+        message={`Missing details: ${missingChecklistItems.join(", ")}. You can proceed, but filling these first usually creates a stronger JD.`}
+        confirmLabel="Generate anyway"
+        cancelLabel="Fill details"
+        onCancel={() => {
+          setPendingGenerationInput(null);
+          setMissingChecklistItems([]);
+        }}
+        onConfirm={() => {
+          const input = pendingGenerationInput;
+          setPendingGenerationInput(null);
+          setMissingChecklistItems([]);
+          if (input) void executeGenerate(input);
+        }}
+      />
     </div>
   );
+}
+
+function assessInputCompleteness(input: string) {
+  return inputChecklist.map((item) => ({
+    id: item.id,
+    label: item.label,
+    hint: item.hint,
+    complete: item.pattern.test(input),
+  }));
+}
+
+function assessChatCompleteness(answeredCount: number) {
+  return inputChecklist.map((item, index) => ({
+    id: item.id,
+    label: item.label,
+    hint: item.hint,
+    complete: index < answeredCount,
+  }));
+}
+
+function countRecruiterAnswers(input: string): number {
+  return input.split("\n").filter((line) => line.toLowerCase().startsWith("recruiter:")).length;
 }
 
 function formatMessages(messages: ChatMessage[]): string {
@@ -366,4 +500,3 @@ async function extractAudioFromMedia(file: File): Promise<File> {
     await audioCtx.close();
   }
 }
-

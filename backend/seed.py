@@ -81,7 +81,6 @@ def seed():
                     title=title_from_pdf(pdf),
                     content=f"Source JD uploaded from {pdf.name}.",
                     ownership="public",
-                    jd_score=None,
                     pdf_url=pdf_url,
                     created_by=admin.id,
                 )

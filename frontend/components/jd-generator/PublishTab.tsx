@@ -32,7 +32,6 @@ export default function PublishTab({
       title: jd.title,
       content: JSON.stringify(jd),
       ownership,
-      jd_score: jd.jd_score ?? null,
       context: jd.summary ?? null,
       skills: jd.skills ?? [],
       resume_skills: jd.resume_skills ?? [],

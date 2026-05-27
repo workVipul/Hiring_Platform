@@ -24,7 +24,7 @@ export default function CommonJDs({ onSource }: { onSource: (id: number, title: 
     <div className="table-wrap">
       <table>
         <thead>
-          <tr><th>Common JD</th><th>Score</th><th>Skills</th><th>PDF</th><th>Sourcing</th></tr>
+          <tr><th>Common JD</th><th>Skills</th><th>PDF</th><th>Sourcing</th></tr>
         </thead>
         <tbody>
           {rows.map((jd) => {
@@ -32,7 +32,6 @@ export default function CommonJDs({ onSource }: { onSource: (id: number, title: 
             return (
               <tr key={jd.id}>
                 <td><strong>{jd.title}</strong></td>
-                <td>{jd.jd_score ?? "-"}</td>
                 <td>{jd.skills?.join(", ") || "-"}</td>
                 <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">Open</a> : "-"}</td>
                 <td>

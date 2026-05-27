@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useJDs } from "@/hooks/useJDs";
 import { jdApi } from "@/services/jdApi";
 import type { JD } from "@/types/jd";
+import ConfirmDialog from "./ConfirmDialog";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-IN", {
@@ -28,6 +29,7 @@ export default function JDTable() {
   const perPage = 12;
   const { jds, total, loading, error, setJDs, setTotal } = useJDs(page, perPage);
   const [query, setQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<JD | null>(null);
 
   const filtered = useMemo(
     () => jds.filter((jd) => jd.title.toLowerCase().includes(query.toLowerCase())),
@@ -36,63 +38,72 @@ export default function JDTable() {
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   async function handleDelete(id: number) {
-    if (!confirm("Delete this JD?")) return;
     await jdApi.delete(id);
     setJDs((prev) => prev.filter((jd) => jd.id !== id));
     setTotal((prev) => prev - 1);
+    setDeleteTarget(null);
   }
 
   if (loading) return <div className="empty-state">Loading JDs...</div>;
   if (error) return <div className="error-box">Failed to load JDs: {error}</div>;
 
   return (
-    <div className="table-wrap">
-      <div className="table-tools">
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search job descriptions" />
-        <span className="muted small">{filtered.length} of {total} records</span>
-      </div>
+    <>
+      <div className="table-wrap">
+        <div className="table-tools">
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search job descriptions" />
+          <span className="muted small">{filtered.length} of {total} records</span>
+        </div>
 
-      {filtered.length === 0 ? (
-        <div className="empty-state">No JDs found.</div>
-      ) : (
-        <table className="jd-dashboard-table">
-          <colgroup>
-            <col className="jd-col-title" />
-            <col className="jd-col-owner" />
-            <col className="jd-col-score" />
-            <col className="jd-col-skills" />
-            <col className="jd-col-creator" />
-            <col className="jd-col-pdf" />
-            <col className="jd-col-created" />
-            <col className="jd-col-actions" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Ownership</th>
-              <th>Score</th>
-              <th>Skills</th>
-              <th>Created By</th>
-              <th>PDF</th>
-              <th>Created</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((jd) => <JDRow key={jd.id} jd={jd} onDelete={() => handleDelete(jd.id)} />)}
-          </tbody>
-        </table>
-      )}
-      <div className="table-pagination">
-        <button className="secondary-button" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
-          Previous
-        </button>
-        <span className="muted small">Page {page} of {totalPages}</span>
-        <button className="secondary-button" disabled={page >= totalPages} onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}>
-          Next
-        </button>
+        {filtered.length === 0 ? (
+          <div className="empty-state">No JDs found.</div>
+        ) : (
+          <table className="jd-dashboard-table">
+            <colgroup>
+              <col className="jd-col-title" />
+              <col className="jd-col-owner" />
+              <col className="jd-col-skills" />
+              <col className="jd-col-creator" />
+              <col className="jd-col-pdf" />
+              <col className="jd-col-created" />
+              <col className="jd-col-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Ownership</th>
+                <th>Skills</th>
+                <th>Created By</th>
+                <th>PDF</th>
+                <th>Created</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((jd) => <JDRow key={jd.id} jd={jd} onDelete={() => setDeleteTarget(jd)} />)}
+            </tbody>
+          </table>
+        )}
+        <div className="table-pagination">
+          <button className="secondary-button" disabled={page <= 1} onClick={() => setPage((prev) => Math.max(1, prev - 1))}>
+            Previous
+          </button>
+          <span className="muted small">Page {page} of {totalPages}</span>
+          <button className="secondary-button" disabled={page >= totalPages} onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}>
+            Next
+          </button>
+        </div>
       </div>
-    </div>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete job description?"
+        message={deleteTarget ? `This will permanently remove "${deleteTarget.title}" from your workspace.` : ""}
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget.id)}
+      />
+    </>
   );
 }
 
@@ -120,7 +131,6 @@ function JDRow({ jd, onDelete }: { jd: JD; onDelete: () => void }) {
         <span className="muted small line-clamp">{getJDSummary(jd)}</span>
       </td>
       <td><span className="badge">{jd.ownership}</span></td>
-      <td>{jd.jd_score ?? "-"}</td>
       <td className="truncate-cell" title={jd.skills?.join(", ") || "-"}>{jd.skills?.slice(0, 3).join(", ") || "-"}</td>
       <td className="truncate-cell" title={jd.created_by_name || "-"}>{jd.created_by_name || "-"}</td>
       <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">Preview</a> : "-"}</td>

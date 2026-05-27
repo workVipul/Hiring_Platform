@@ -28,7 +28,7 @@ export default function Header() {
   const handleSignOutClick = (e: React.MouseEvent) => {
     if (hasUnsavedJD) {
       e.preventDefault();
-      setPendingNavigationAction(() => () => signOut());
+      setPendingNavigationAction(() => signOut());
     } else {
       signOut();
     }

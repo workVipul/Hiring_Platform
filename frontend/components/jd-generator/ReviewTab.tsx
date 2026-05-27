@@ -66,28 +66,35 @@ export default function ReviewTab({
         <button className="primary-button" onClick={onNext}>Continue to Publish</button>
       </div>
 
-      <aside className="panel stack">
-        <h2>Refine</h2>
-        <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder="Example: make this Senior Engineer focused" rows={5} />
-        {error && <p className="error">{error}</p>}
-        <button className="secondary-button" disabled={loading || instruction.trim().length < 5} onClick={handleRefine}>
-          {loading ? "Refining..." : "Apply refinement"}
-        </button>
-        <div className="metric">
-          <span>Quality score</span>
-          <strong>{currentJD.jd_score ?? "-"}</strong>
+      <aside className="review-sidebar">
+        <div className="panel stack">
+          <h2>Refine</h2>
+          <textarea value={instruction} onChange={(e) => setInstruction(e.target.value)} placeholder="Example: make this Senior Engineer focused" rows={5} />
+          {error && <p className="error">{error}</p>}
+          <button className="secondary-button" disabled={loading || instruction.trim().length < 5} onClick={handleRefine}>
+            {loading ? "Refining..." : "Apply refinement"}
+          </button>
         </div>
-        <div className="quality-suggestions">
+
+        <div className="panel quality-suggestions">
           <strong>Improve this JD</strong>
           {improvementSuggestions.length > 0 ? (
-            <ul>
-              {improvementSuggestions.map((item) => <li key={item}>{item}</li>)}
-            </ul>
+            <div className="quality-suggestion-list">
+              {improvementSuggestions.map((item) => (
+                <div className="quality-suggestion-item" key={item}>
+                  <span />
+                  <p>{item}</p>
+                </div>
+              ))}
+            </div>
           ) : (
             <p className="muted small">This draft has the core details recruiters need.</p>
           )}
         </div>
-        <SkillGraph jd={currentJD} />
+
+        <div className="panel">
+          <SkillGraph jd={currentJD} />
+        </div>
       </aside>
     </div>
   );
@@ -106,13 +113,35 @@ function stripExperienceLead(value: string): string {
 function getQualitySuggestions(jd: GeneratedJD): string[] {
   const suggestions: string[] = [];
   const metadata = jd.metadata ?? {};
-  if (!jd.summary || jd.summary.length < 120) suggestions.push("Add a sharper job summary with project/domain context.");
-  if ((jd.responsibilities ?? []).length < 5) suggestions.push("Add at least 5 key responsibilities.");
-  if ((jd.requirements ?? []).length < 5) suggestions.push("Add more qualifications and required skills.");
-  if ((jd.skills ?? []).length < 5) suggestions.push("List the must-have technical skills separately.");
-  if (!getExperience(jd)) suggestions.push("Add a clear experience range, for example 8-12 years.");
-  if (!metadata.location) suggestions.push("Add location.");
-  if (!metadata.work_mode) suggestions.push("Add mode of work such as Hybrid, Remote, or Onsite.");
-  if ((jd.nice_to_have ?? []).length < 2) suggestions.push("Add good-to-have skills or domain preferences.");
-  return suggestions.slice(0, 5);
+  const mustHaveSkills = listFromUnknown(metadata.must_have_skills);
+  const preferredSkills = listFromUnknown(metadata.preferred_skills);
+  const domain = metadata.industry_or_domain ?? metadata.domain ?? metadata.project_domain;
+
+  if (isMissingContext(getExperience(jd))) suggestions.push("Add a clear experience range, for example 8-12 years.");
+  if (isMissingContext(metadata.location)) suggestions.push("Add the job location or hiring geography.");
+  if (isMissingContext(metadata.work_mode)) suggestions.push("Add mode of work such as Hybrid, Remote, or Onsite.");
+  if (mustHaveSkills.length < 3 && (jd.skills ?? []).length < 3) suggestions.push("List the recruiter-confirmed must-have technical skills.");
+  if ((jd.responsibilities ?? []).length < 5) suggestions.push("Add at least 5 role-specific responsibilities.");
+  if ((jd.requirements ?? []).length < 5) suggestions.push("Add more required qualifications tied to the role.");
+  if (!jd.summary || jd.summary.length < 120) suggestions.push("Add a sharper job summary with project or team context.");
+  if ((jd.nice_to_have ?? []).length < 2 && preferredSkills.length < 2) suggestions.push("Add good-to-have skills or domain preferences.");
+  if (isMissingContext(domain)) suggestions.push("Add domain, client, product, or project context if relevant.");
+
+  return uniqueSuggestions(suggestions).slice(0, 6);
+}
+
+function isMissingContext(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  const text = String(value).trim().toLowerCase();
+  return !text || ["n/a", "na", "none", "unknown", "unspecified", "not specified", "to be decided", "tbd", "flexible"].includes(text);
+}
+
+function listFromUnknown(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function uniqueSuggestions(items: string[]): string[] {
+  return Array.from(new Set(items));
 }

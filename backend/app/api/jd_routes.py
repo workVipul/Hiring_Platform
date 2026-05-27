@@ -17,7 +17,6 @@ from app.schemas.jd import (
     JDPublishRequest,
     JDRefineRequest,
     JDResponse,
-    calculate_jd_quality_score,
     normalize_generated_jd,
 )
 from app.services.pdf_service import write_simple_pdf
@@ -25,14 +24,13 @@ from app.services.pdf_service import write_simple_pdf
 
 router = APIRouter(prefix="/api/v1/jds", tags=["JDs"])
 
-GENERATE_SYSTEM = """You are an expert technical recruiter and talent intelligence specialist for Wissen Technology.
-Convert the supplied hiring context into a recruiter-ready Job Description and structured hiring intelligence.
-Think like a senior sourcing specialist: infer implicit requirements only when strongly supported, normalize technology names
-(for example React.js to React, GoLang to Go, RESTful APIs to REST APIs), detect seniority, split mandatory and optional skills,
-and prioritize the requirements that matter most for hiring.
+GENERATE_SYSTEM = """You are an expert technical recruiter creating a Wissen Technology Job Description.
+Convert the supplied hiring context into a recruiter-ready JD and structured hiring intelligence.
+Use the same disciplined style as a refinement pass: preserve the user's factual constraints, infer only when strongly supported,
+normalize technology names, detect seniority, split mandatory and optional skills, and prioritize hiring-critical requirements.
 
 Return ONLY valid JSON with these keys: title, summary, responsibilities, requirements, nice_to_have, soft_skills,
-compensation, about_company, jd_score, skills, resume_skills, metadata.
+compensation, about_company, skills, resume_skills, metadata.
 
 metadata should include useful structured fields when inferable:
 department, seniority, work_mode, location, experience_years, experience_min_years, experience_max_years,
@@ -54,7 +52,7 @@ Requirements must be technical qualifications only, written like "Strong experti
 "Hands-on experience with Spring Boot", "Working knowledge of SQL / NoSQL databases".
 Do not include communication, leadership, problem-solving, work mode, agile process, or standalone skill names in requirements.
 Put communication, collaboration, leadership, and problem-solving in soft_skills.
-Do not hallucinate salary, location, certifications, or tools that are not supplied or strongly implied.
+Do not hallucinate salary, location, certifications, tools, or benefits that are not supplied or strongly implied.
 Do not repeat the word experience in every requirement. Put overall experience only in metadata.experience_years."""
 
 REFINE_SYSTEM = """You are an expert technical recruiter refining a Wissen Technology Job Description.
@@ -83,13 +81,25 @@ def upsert_details(db: Session, jd: JD, *, context: str | None, skills: list[str
     detail.metadata_json = metadata
 
 
+def strip_jd_score_from_json(content: str | None) -> str | None:
+    if not content:
+        return content
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return content
+    if isinstance(parsed, dict):
+        parsed.pop("jd_score", None)
+        return json.dumps(parsed)
+    return content
+
+
 def serialize_jd(jd: JD, detail: JDDetail | None = None, creator_name: str | None = None) -> JDResponse:
     return JDResponse(
         id=jd.id,
         title=jd.title,
-        content=jd.content,
+        content=strip_jd_score_from_json(jd.content),
         ownership=jd.ownership,
-        jd_score=jd.jd_score,
         pdf_url=jd.pdf_url,
         created_by=jd.created_by,
         created_by_name=creator_name,
@@ -148,22 +158,12 @@ def get_jd(jd_id: int, db: Session = Depends(get_db), current_user: User = Depen
 
 @router.post("", response_model=JDResponse, status_code=201)
 def create_jd(payload: JDCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    content = payload.content
-    score = payload.jd_score
-    try:
-        parsed_content = json.loads(content or "{}")
-        if isinstance(parsed_content, dict) and parsed_content:
-            score = calculate_jd_quality_score(parsed_content)
-            parsed_content["jd_score"] = score
-            content = json.dumps(parsed_content)
-    except json.JSONDecodeError:
-        pass
+    content = strip_jd_score_from_json(payload.content)
 
     jd = JD(
         title=payload.title,
         content=content,
         ownership=validate_ownership(payload.ownership),
-        jd_score=score,
         pdf_url=payload.pdf_url,
         created_by=current_user.id,
     )
@@ -191,8 +191,8 @@ async def generate_jd(payload: JDGenerateRequest):
             system=GENERATE_SYSTEM,
             user=(
                 f"Input type: {payload.input_type}\n\n"
-                "Generate an informative standardized JD and structured hiring intelligence from this reviewed hiring conversation. "
-                "Use only the supplied details or strongly supported inferences; if something is unknown, omit it instead of inventing it.\n\n"
+                "Generate a polished, standardized JD from the supplied hiring context. "
+                "Apply the context precisely, keep unsupported details out, and return the complete JSON structure only.\n\n"
                 f"Hiring context:\n{payload.raw_input}"
             ),
             max_tokens=2400,
@@ -256,11 +256,8 @@ def publish_jd(jd_id: int, payload: JDPublishRequest, db: Session = Depends(get_
         jd.ownership = ownership
 
     if parsed_content is not None:
-        jd.jd_score = calculate_jd_quality_score(parsed_content)
-        parsed_content["jd_score"] = jd.jd_score
+        parsed_content.pop("jd_score", None)
         jd.content = json.dumps(parsed_content)
-    else:
-        jd.jd_score = payload.jd_score
     db.commit()
     db.refresh(jd)
     jd.pdf_url = write_simple_pdf(jd.title, jd.content or "", jd.id)
@@ -287,10 +284,10 @@ def preview_jd(payload: JDPublishRequest, current_user: User = Depends(get_curre
             parsed_content = {"summary": payload.content}
     except json.JSONDecodeError:
         parsed_content = {"summary": payload.content}
-    parsed_content["jd_score"] = calculate_jd_quality_score(parsed_content)
+    parsed_content.pop("jd_score", None)
     preview_key = f"preview-{current_user.id}"
     pdf_url = write_simple_pdf(payload.title, json.dumps(parsed_content), preview_key)
-    return {"pdf_url": pdf_url, "jd_score": parsed_content["jd_score"]}
+    return {"pdf_url": pdf_url}
 
 
 @router.put("/{jd_id}", response_model=JDResponse)
@@ -300,14 +297,12 @@ def update_jd(jd_id: int, payload: JDCreate, db: Session = Depends(get_db), curr
         raise HTTPException(status_code=404, detail="JD not found")
 
     jd.title = payload.title
-    jd.content = payload.content
+    jd.content = strip_jd_score_from_json(payload.content)
     jd.ownership = validate_ownership(payload.ownership)
-    jd.jd_score = payload.jd_score
     try:
         parsed_content = json.loads(payload.content or "{}")
         if isinstance(parsed_content, dict) and parsed_content:
-            jd.jd_score = calculate_jd_quality_score(parsed_content)
-            parsed_content["jd_score"] = jd.jd_score
+            parsed_content.pop("jd_score", None)
             jd.content = json.dumps(parsed_content)
     except json.JSONDecodeError:
         pass
@@ -390,7 +385,6 @@ async def upload_and_parse_jd(
         title=jd_title,
         content=content_json,
         ownership="personal",
-        jd_score=normalized.get("jd_score"),
         created_by=current_user.id,
     )
     db.add(jd)
