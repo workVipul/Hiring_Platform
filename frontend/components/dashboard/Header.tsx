@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
+import { useAuthStore } from "@/store/authStore";
 
 export default function Header() {
   const pathname = usePathname();
   const { userName, accessType, signOut } = useAuth();
+  const hasUnsavedJD = useAuthStore((state) => state.hasUnsavedJD);
+  const setPendingNavigationUrl = useAuthStore((state) => state.setPendingNavigationUrl);
+  const setPendingNavigationAction = useAuthStore((state) => state.setPendingNavigationAction);
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard" },
@@ -14,10 +18,31 @@ export default function Header() {
     { href: "/dashboard/sourcing", label: "Sourcing" },
   ];
 
+  const handleNavigationConfirm = (e: React.MouseEvent, targetHref: string) => {
+    if (hasUnsavedJD && pathname !== targetHref) {
+      e.preventDefault();
+      setPendingNavigationUrl(targetHref);
+    }
+  };
+
+  const handleSignOutClick = (e: React.MouseEvent) => {
+    if (hasUnsavedJD) {
+      e.preventDefault();
+      setPendingNavigationAction(() => () => signOut());
+    } else {
+      signOut();
+    }
+  };
+
+
   return (
     <header className="site-header">
       <div className="site-header-container">
-        <Link href="/dashboard" className="site-header-logo-section">
+        <Link 
+          href="/dashboard" 
+          className="site-header-logo-section"
+          onClick={(e) => handleNavigationConfirm(e, "/dashboard")}
+        >
           <img
             src="/wissen_logo.png"
             alt="Wissen Technology"
@@ -36,6 +61,7 @@ export default function Header() {
                 key={item.href}
                 href={item.href}
                 className={`site-header-link ${isActive ? "active" : ""}`}
+                onClick={(e) => handleNavigationConfirm(e, item.href)}
               >
                 {item.label}
               </Link>
@@ -48,7 +74,11 @@ export default function Header() {
             <p className="site-header-user-name">{userName || "Recruiter"}</p>
             <p className="site-header-user-role">{accessType || "Standard"}</p>
           </div>
-          <button className="secondary-button" style={{ padding: "6px 12px", fontSize: "0.85rem", width: "auto" }} onClick={signOut}>
+          <button 
+            className="secondary-button" 
+            style={{ padding: "6px 12px", fontSize: "0.85rem", width: "auto" }} 
+            onClick={handleSignOutClick}
+          >
             Sign out
           </button>
         </div>
@@ -56,3 +86,4 @@ export default function Header() {
     </header>
   );
 }
+
