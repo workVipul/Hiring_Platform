@@ -81,6 +81,8 @@ export const jdApi = {
     required_skills: string[];
     search_location?: string | null;
     search_seniority?: string | null;
+    search_strategy?: string | null;
+    search_notice?: string | null;
     experience_requirement: string | null;
     candidates: any[];
     total: number;

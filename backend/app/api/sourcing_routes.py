@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -28,6 +29,62 @@ def visible_jd(db: Session, user: User, jd_id: int):
     if get_access_type(user, db) != "admin":
         query = query.filter(or_(JD.ownership == "public", JD.created_by == user.id))
     return query.first()
+
+
+def merge_candidates(existing: list[dict], incoming: list[dict]) -> list[dict]:
+    seen = {str(candidate.get("id")) for candidate in existing}
+    merged = [*existing]
+    for candidate in incoming:
+        candidate_id = str(candidate.get("id"))
+        if candidate_id and candidate_id not in seen:
+            merged.append(candidate)
+            seen.add(candidate_id)
+    return merged
+
+
+def filter_attempts(skills: list[str], location: str | None) -> list[dict]:
+    attempts = [
+        {
+            "label": "Skills + location",
+            "skills": skills,
+            "location": location,
+            "seniority": None,
+        },
+        {
+            "label": "Skills only",
+            "skills": skills,
+            "location": None,
+            "seniority": None,
+        },
+    ]
+    unique_attempts = []
+    seen = set()
+    for attempt in attempts:
+        key = (
+            tuple(attempt["skills"]),
+            attempt["location"] or "",
+        )
+        if key not in seen and attempt["skills"]:
+            unique_attempts.append(attempt)
+            seen.add(key)
+    return unique_attempts
+
+
+def jd_for_ranking(jd: JD, experience_or_seniority: str | None):
+    if not experience_or_seniority:
+        return jd
+    try:
+        content = json.loads(jd.content or "{}")
+    except json.JSONDecodeError:
+        content = {}
+    if not isinstance(content, dict):
+        content = {}
+    metadata = content.get("metadata") if isinstance(content.get("metadata"), dict) else {}
+    metadata = {**metadata}
+    metadata["experience_years"] = experience_or_seniority
+    metadata.setdefault("seniority", experience_or_seniority)
+    content["metadata"] = metadata
+    return SimpleNamespace(id=jd.id, title=jd.title, content=json.dumps(content))
 
 
 async def build_candidate_response(
@@ -98,21 +155,53 @@ async def build_candidate_response(
     search_location = None if all_candidates else (filter_location or location)
     search_seniority = None if all_candidates else (filter_seniority or seniority)
 
-    # 3. Query candidates from Zoho Recruit with AND criteria across title, skills, location, and seniority.
-    candidates = await ZohoRecruitService.fetch_candidates(
-        skills=search_skills,
-        title=jd.title,
-        location=search_location,
-        seniority=search_seniority,
-        page=page,
-        per_page=per_page,
-        all_candidates=all_candidates,
-    )
+    candidates = []
+    search_strategy = "All candidates" if all_candidates else "Skills + location"
+    search_notice = None
+
+    if all_candidates:
+        candidates = await ZohoRecruitService.fetch_candidates(
+            skills=[],
+            title=None,
+            location=None,
+            seniority=None,
+            page=page,
+            per_page=per_page,
+            all_candidates=True,
+        )
+    else:
+        # Query location-aware first, then broaden to skills-only if needed.
+        # Experience/title are handled during ranking because the mock Zoho schema stores
+        # years numerically and title as Current_Job_Title, not criteria-friendly fields.
+        target_count = per_page
+        attempts_used = []
+        for attempt in filter_attempts(search_skills, search_location):
+            attempt_candidates = await ZohoRecruitService.fetch_candidates(
+                skills=attempt["skills"],
+                title=jd.title,
+                location=attempt["location"],
+                seniority=attempt["seniority"],
+                page=page,
+                per_page=per_page,
+            )
+            attempts_used.append(attempt["label"])
+            candidates = merge_candidates(candidates, attempt_candidates)
+            if len(candidates) >= target_count:
+                break
+
+        search_strategy = attempts_used[-1] if attempts_used else search_strategy
+        if len(attempts_used) > 1:
+            search_notice = (
+                "Location-aware filters returned too few candidates, so the search was broadened to skills before ranking. "
+                "Experience and title are still considered during ranking."
+            )
+
+    ranking_jd = jd_for_ranking(jd, search_seniority)
 
     # 4. Rank candidates using LLM engine
     ranked_candidates = await CandidateRankingEngine.rank_candidates(
         candidates=candidates,
-        jd=jd,
+        jd=ranking_jd,
         jd_skills=skills
     )
 
@@ -124,6 +213,8 @@ async def build_candidate_response(
         "search_location": search_location,
         "search_seniority": search_seniority,
         "experience_requirement": experience_requirement or seniority,
+        "search_strategy": search_strategy,
+        "search_notice": search_notice,
         "candidates": ranked_candidates,
         "total": len(ranked_candidates)
     }

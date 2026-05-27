@@ -70,6 +70,8 @@ export default function CandidateList({
   const [loading, setLoading] = useState(false);
   const [sourceStarted, setSourceStarted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchNotice, setSearchNotice] = useState<string | null>(null);
+  const [searchStrategy, setSearchStrategy] = useState<string | null>(null);
   const [sourceFilters, setSourceFilters] = useState<SourceFilters>({ skills: [], location: "", seniority: "", perPage: 20 });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState<CandidateFilters>(defaultFilters);
@@ -107,6 +109,8 @@ export default function CandidateList({
         });
         setCandidates([]);
         setSourceStarted(false);
+        setSearchNotice(null);
+        setSearchStrategy(null);
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Failed to load job description");
       } finally {
@@ -135,10 +139,14 @@ export default function CandidateList({
       setPage(1);
       setRequiredSkills(res.required_skills || res.search_skills || []);
       setExperienceRequirement(res.experience_requirement || res.search_seniority || null);
+      setSearchNotice(res.search_notice || null);
+      setSearchStrategy(res.search_strategy || null);
       setExpandedIds(new Set(res.candidates.slice(0, 1).map((candidate: Candidate) => candidate.id)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load candidates");
       setCandidates([]);
+      setSearchNotice(null);
+      setSearchStrategy(null);
     } finally {
       setLoading(false);
     }
@@ -210,6 +218,13 @@ export default function CandidateList({
           {[1, 2, 3].map((n) => (
             <div key={n} className="candidate-card candidate-card-skeleton" />
           ))}
+        </div>
+      )}
+
+      {sourceStarted && !loading && !error && (searchNotice || searchStrategy) && (
+        <div className="source-search-summary">
+          {searchStrategy && <strong>Search used: {searchStrategy}</strong>}
+          {searchNotice && <p>{searchNotice}</p>}
         </div>
       )}
 
@@ -308,7 +323,7 @@ function SourceFilterPanel({
         <p className="eyebrow">Pre-source filters</p>
         <h3>Choose Zoho filters before ranking</h3>
         <p className="muted">
-          These filters are applied before fetching candidates and before LLM ranking. Zoho search will combine title, selected skills, location, and experience with AND criteria.
+          Skills and location narrow the Zoho fetch. Experience is applied during ranking so strong candidates are not discarded because of ATS wording differences.
         </p>
       </div>
 
@@ -326,7 +341,7 @@ function SourceFilterPanel({
           />
         </label>
         <label>
-          Experience / seniority
+          Experience / seniority for ranking
           <input
             value={filters.seniority}
             onChange={(e) => onChange({ ...filters, seniority: e.target.value })}

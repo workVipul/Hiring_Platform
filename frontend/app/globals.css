@@ -1110,6 +1110,27 @@ tr:hover td {
   align-items: center;
 }
 
+.source-search-summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(87, 207, 228, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(87, 207, 228, 0.1);
+}
+
+.source-search-summary strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.source-search-summary p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .candidate-results-layout {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);

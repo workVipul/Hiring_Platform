@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import time
+import re
 import httpx
 from app.core.config import settings
 
@@ -13,46 +14,77 @@ def build_criteria(
     seniority: str | None = None
 ) -> str:
     groups = []
-    
-    # 1. Designation
-    if title:
-        clean_title = title.strip()
-        if clean_title:
-            groups.append(f"((Designation:contains:{clean_title}))")
-            
-    # 2. Skills
+
+    # 1. Skills are the safest pre-ranking filter. Use OR inside the skill group,
+    # then AND the group with location/seniority when provided.
     if skills:
         clean_skills = [s.strip() for s in skills if s.strip()]
         skill_clauses = [f"((Skill_Set:contains:{skill}))" for skill in clean_skills[:5]]
         if skill_clauses:
             groups.append("(" + "or".join(skill_clauses) + ")")
             
-    # 3. Experience Level / Seniority
-    sen_val = None
-    if seniority:
-        sen_val = seniority.strip()
-    elif title:
-        title_lower = title.lower()
-        if "senior" in title_lower or "sr" in title_lower:
-            sen_val = "Senior"
-        elif "junior" in title_lower or "jr" in title_lower:
-            sen_val = "Junior"
-        elif "lead" in title_lower:
-            sen_val = "Lead"
-            
-    if sen_val:
-        groups.append(f"((Experience_Level:contains:{sen_val}))")
-        
-    # 4. Location
+    # 2. Location. The mock Zoho API stores location across City/State/Country,
+    # not a single Location field.
     if location:
-        clean_loc = location.strip()
-        if clean_loc:
-            groups.append(f"((Location:contains:{clean_loc}))")
+        location_clauses = []
+        for term in location_terms(location):
+            location_clauses.extend([
+                f"((City:contains:{term}))",
+                f"((State:contains:{term}))",
+                f"((Country:contains:{term}))",
+            ])
+        if location_clauses:
+            groups.append("(" + "or".join(location_clauses) + ")")
             
     if not groups:
         return ""
         
     return "and".join(groups)
+
+
+def normalize_location(value: str) -> str:
+    # Zoho often stores city only; avoid filtering on long "City, State, Country" strings.
+    return value.split(",")[0].strip()
+
+
+def location_terms(value: str) -> list[str]:
+    raw_terms = [part.strip() for part in value.split(",") if part.strip()]
+    if not raw_terms:
+        raw_terms = [value.strip()]
+    terms = []
+    for term in raw_terms:
+        terms.append(term)
+        lowered = term.lower()
+        if lowered == "bangalore":
+            terms.append("Bengaluru")
+        elif lowered == "bengaluru":
+            terms.append("Bangalore")
+    seen = set()
+    return [term for term in terms if term and not (term.lower() in seen or seen.add(term.lower()))]
+
+
+def seniority_to_zoho_levels(value: str) -> list[str]:
+    lowered = value.lower().strip()
+    if not lowered:
+        return []
+    if "principal" in lowered or "architect" in lowered or "lead" in lowered:
+        return ["Lead", "Senior"]
+    if "senior" in lowered or "sr" in lowered:
+        return ["Senior", "Lead"]
+    if "junior" in lowered or "jr" in lowered or "fresher" in lowered:
+        return ["Junior"]
+    if "mid" in lowered:
+        return ["Mid", "Senior"]
+
+    years = [float(match) for match in re.findall(r"\d+(?:\.\d+)?", lowered)]
+    if not years:
+        return [value.strip()]
+    minimum = min(years)
+    if minimum >= 8:
+        return ["Senior", "Lead"]
+    if minimum >= 4:
+        return ["Mid", "Senior"]
+    return ["Junior", "Mid"]
 
 class ZohoRecruitService:
     _cached_token = None

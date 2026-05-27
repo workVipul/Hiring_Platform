@@ -193,8 +193,10 @@ class CandidateRankingEngine:
             compact_candidates = [
                 {
                     "id": cand["id"],
+                    "current_title": (cand.get("raw_profile") or {}).get("Current_Job_Title"),
                     "skills": cand.get("skills", [])[:20],
                     "experience": cand.get("experience_level"),
+                    "experience_years": (cand.get("raw_profile") or {}).get("Experience_in_Years"),
                     "location": cand.get("location"),
                 }
                 for cand in batch
