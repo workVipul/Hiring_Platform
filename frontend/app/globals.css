@@ -925,8 +925,6 @@ tr:hover td {
 .quality-suggestions {
   display: grid;
   gap: 12px;
-  border-top: 0;
-  padding-top: 0;
 }
 
 .quality-suggestions strong {

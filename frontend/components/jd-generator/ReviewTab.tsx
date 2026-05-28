@@ -63,6 +63,174 @@ export default function ReviewTab({
         <label>Requirements<textarea value={(currentJD.requirements ?? []).join("\n")} onChange={(e) => updateList("requirements", e.target.value)} rows={6} /></label>
         <label>Nice to have<textarea value={(currentJD.nice_to_have ?? []).join("\n")} onChange={(e) => updateList("nice_to_have", e.target.value)} rows={4} /></label>
         <label>Soft skills<textarea value={(currentJD.soft_skills ?? []).join("\n")} onChange={(e) => updateList("soft_skills", e.target.value)} rows={4} /></label>
+
+        {/* Canva-Style Template Chooser Section */}
+        <div style={{ marginTop: "24px", borderTop: "1px solid var(--border)", paddingTop: "20px", marginBottom: "20px" }}>
+          <h3 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)", marginBottom: "4px" }}>Select PDF Template</h3>
+          <p style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "14px" }}>
+            Choose a professional layout style for the generated Job Description PDF.
+          </p>
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            gap: "14px",
+            marginBottom: "10px"
+          }}>
+            {[
+              {
+                id: "corporate",
+                name: "Corporate Classic",
+                desc: "Standard Wissen presentation",
+                preview: (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", padding: "8px", background: "#ffffff", height: "90px", width: "100%" }}>
+                    {/* Header */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #1A2D58", paddingBottom: "2px" }}>
+                      <span style={{ fontSize: "6px", fontWeight: "800", color: "#1A2D58" }}>WISSEN</span>
+                      <span style={{ fontSize: "5px", color: "#ccc" }}>•••</span>
+                    </div>
+                    {/* Content */}
+                    <div style={{ height: "4px", background: "#1A2D58", width: "60%", borderRadius: "1px" }} />
+                    <div style={{ height: "3px", background: "#f0f0f0", width: "100%", borderRadius: "1px" }} />
+                    <div style={{ height: "3px", background: "#f0f0f0", width: "90%", borderRadius: "1px" }} />
+                    <div style={{ height: "3px", background: "#f0f0f0", width: "40%", borderRadius: "1px", marginTop: "2px" }} />
+                    <div style={{ height: "3px", background: "#f0f0f0", width: "80%", borderRadius: "1px" }} />
+                  </div>
+                )
+              },
+              {
+                id: "modern",
+                name: "Modern Minimalist",
+                desc: "Clean & compact text layout",
+                preview: (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "3px", padding: "8px", background: "#ffffff", height: "90px", width: "100%" }}>
+                    {/* Header with logo on the right side */}
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", borderBottom: "1px solid #1A2D58", paddingBottom: "2px" }}>
+                      <span style={{ fontSize: "5px", fontWeight: "800", color: "#1A2D58" }}>WISSEN</span>
+                    </div>
+                    {/* Content */}
+                    <div style={{ height: "4px", background: "#1A2D58", width: "45%", borderRadius: "1px", marginTop: "2px" }} />
+                    <div style={{ height: "3px", background: "#f5f5f5", width: "100%", borderRadius: "1px" }} />
+                    <div style={{ height: "3px", background: "#f5f5f5", width: "100%", borderRadius: "1px" }} />
+                    <div style={{ height: "3px", background: "#f5f5f5", width: "95%", borderRadius: "1px" }} />
+                    <div style={{ height: "3px", background: "#f5f5f5", width: "60%", borderRadius: "1px" }} />
+                  </div>
+                )
+              },
+              {
+                id: "executive",
+                name: "Executive Serif",
+                desc: "Centered editorial design",
+                preview: (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", padding: "8px", background: "#ffffff", height: "90px", width: "100%" }}>
+                    {/* Header with centered logo */}
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", borderBottom: "2.5px double #1A2D58", paddingBottom: "2px", width: "100%" }}>
+                      <span style={{ fontSize: "5.5px", fontWeight: "800", color: "#1A2D58" }}>WISSEN</span>
+                    </div>
+                    {/* Content */}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "4px", width: "100%", marginTop: "2px" }}>
+                      <div style={{ height: "4px", background: "#1A2D58", width: "50%", borderRadius: "1px" }} />
+                      <div style={{ height: "3px", background: "#f3f3f3", width: "90%", borderRadius: "1px" }} />
+                      <div style={{ height: "3px", background: "#f3f3f3", width: "85%", borderRadius: "1px" }} />
+                      <div style={{ height: "3px", background: "#f3f3f3", width: "95%", borderRadius: "1px" }} />
+                    </div>
+                  </div>
+                )
+              },
+              {
+                id: "tech",
+                name: "Clean Tech",
+                desc: "Tech-focused code layout",
+                preview: (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "4px", padding: "8px", background: "#ffffff", height: "90px", width: "100%" }}>
+                    {/* Header */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #1A2D58", paddingBottom: "2px", width: "100%" }}>
+                      <span style={{ fontSize: "5.5px", fontWeight: "800", color: "#1A2D58" }}>WISSEN</span>
+                      <span style={{ fontSize: "5px", fontFamily: "monospace", color: "#0A2246" }}>[TECH]</span>
+                    </div>
+                    {/* Content */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: "3px", width: "100%", marginTop: "2px" }}>
+                      {/* Job Title Line */}
+                      <div style={{ height: "4px", background: "#1A2D58", width: "55%", borderRadius: "1px" }} />
+                      
+                      {/* Section 1 Heading with Left Accent Bar */}
+                      <div style={{ display: "flex", gap: "3px", alignItems: "center", marginTop: "1px" }}>
+                        <div style={{ width: "1.5px", background: "#1A2D58", height: "5px", borderRadius: "0.5px" }} />
+                        <div style={{ height: "3.5px", background: "#0A2246", width: "30%", borderRadius: "1px" }} />
+                      </div>
+                      {/* Section 1 Content */}
+                      <div style={{ height: "2.5px", background: "#f5f5f5", width: "90%", marginLeft: "4.5px", borderRadius: "1px" }} />
+                      
+                      {/* Section 2 Heading with Left Accent Bar */}
+                      <div style={{ display: "flex", gap: "3px", alignItems: "center", marginTop: "1px" }}>
+                        <div style={{ width: "1.5px", background: "#1A2D58", height: "5px", borderRadius: "0.5px" }} />
+                        <div style={{ height: "3.5px", background: "#0A2246", width: "35%", borderRadius: "1px" }} />
+                      </div>
+                      {/* Section 2 Content */}
+                      <div style={{ height: "2.5px", background: "#f5f5f5", width: "80%", marginLeft: "4.5px", borderRadius: "1px" }} />
+                    </div>
+                  </div>
+                )
+              }
+            ].map((t) => {
+              const active = (currentJD.metadata?.template || "default") === t.id || ((currentJD.metadata?.template || "default") === "default" && t.id === "corporate");
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    onChange({
+                      ...currentJD,
+                      metadata: {
+                        ...(currentJD.metadata ?? {}),
+                        template: t.id
+                      }
+                    });
+                  }}
+                  style={{
+                    background: "var(--surface-2)",
+                    border: active ? "2px solid var(--color-navy-dark, #0b3c5d)" : "1px solid var(--border)",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.2s ease",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                    alignItems: "stretch",
+                    boxShadow: active ? "0 4px 12px rgba(11, 60, 93, 0.12)" : "none",
+                    outline: "none"
+                  }}
+                >
+                  {/* Card Visual Mock */}
+                  <div style={{
+                    borderRadius: "4px",
+                    overflow: "hidden",
+                    border: "1px solid var(--border)",
+                    display: "flex"
+                  }}>
+                    {t.preview}
+                  </div>
+                  {/* Label */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                    <span style={{
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      color: active ? "var(--color-navy-dark, #0b3c5d)" : "var(--text)"
+                    }}>
+                      {t.name}
+                    </span>
+                    <span style={{ fontSize: "9px", color: "var(--text-secondary)", lineHeight: "1.2" }}>
+                      {t.desc}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <button className="primary-button" onClick={onNext}>Continue to Publish</button>
       </div>
 
