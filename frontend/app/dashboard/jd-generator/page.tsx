@@ -68,7 +68,7 @@ export default function JDGeneratorPage() {
     if (active === "review") {
       return <ReviewTab jd={generatedJD} onChange={setGeneratedJD} onNext={() => setActive("publish")} />;
     }
-    return <PublishTab jd={generatedJD} savedJD={savedJD} onPublished={setSavedJD} />;
+    return <PublishTab jd={generatedJD} savedJD={savedJD} onChange={setGeneratedJD} onPublished={setSavedJD} />;
   }, [active, generatedJD, savedJD]);
 
   const handleTabClick = (tab: Tab) => {

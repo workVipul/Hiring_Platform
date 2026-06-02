@@ -41,6 +41,8 @@ type SourceFilters = {
   perPage: number;
 };
 
+type CandidateDecision = "accepted" | "rejected";
+
 const defaultFilters: CandidateFilters = {
   query: "",
   location: "all",
@@ -65,6 +67,7 @@ export default function CandidateList({
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [jd, setJd] = useState<JD | null>(null);
   const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
+  const [goodToHaveSkills, setGoodToHaveSkills] = useState<string[]>([]);
   const [experienceRequirement, setExperienceRequirement] = useState<string | null>(null);
   const [loadingJD, setLoadingJD] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -72,8 +75,17 @@ export default function CandidateList({
   const [error, setError] = useState<string | null>(null);
   const [searchNotice, setSearchNotice] = useState<string | null>(null);
   const [searchStrategy, setSearchStrategy] = useState<string | null>(null);
+  const [pipelineCounts, setPipelineCounts] = useState<{
+    retrieved_from_zoho: number;
+    deterministic_filtered: number;
+    sent_to_scoring: number;
+    sent_to_llm: number;
+    returned: number;
+  } | null>(null);
+  const [filterRejections, setFilterRejections] = useState<Record<string, number>>({});
   const [sourceFilters, setSourceFilters] = useState<SourceFilters>({ skills: [], location: "", seniority: "", perPage: 20 });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [candidateDecisions, setCandidateDecisions] = useState<Record<string, CandidateDecision>>({});
   const [filters, setFilters] = useState<CandidateFilters>(defaultFilters);
   const [page, setPage] = useState(1);
   const perPage = 6;
@@ -91,18 +103,20 @@ export default function CandidateList({
         const loadedJD = await jdApi.get(jdId);
         if (!active) return;
         const metadata = loadedJD.metadata || {};
-        const inferredSkills = uniqueSorted([
-          ...(loadedJD.skills || []),
-          ...listFromUnknown(metadata.must_have_skills),
+        const inferredMustHave = uniqueSorted(listFromUnknown(metadata.must_have_skills).length ? listFromUnknown(metadata.must_have_skills) : loadedJD.skills || []);
+        const inferredGoodToHave = uniqueSorted([
+          ...listFromUnknown(metadata.preferred_skills),
+          ...listFromContentField(loadedJD.content, "nice_to_have"),
         ]);
         const inferredLocation = stringFromUnknown(metadata.location);
         const inferredSeniority = stringFromUnknown(metadata.seniority);
         const inferredExperience = stringFromUnknown(metadata.experience_years) || stringFromUnknown(metadata.experience);
         setJd(loadedJD);
-        setRequiredSkills(inferredSkills);
+        setRequiredSkills(inferredMustHave);
+        setGoodToHaveSkills(inferredGoodToHave);
         setExperienceRequirement(inferredExperience || inferredSeniority || null);
         setSourceFilters({
-          skills: inferredSkills.slice(0, 5),
+          skills: inferredMustHave.slice(0, 8),
           location: inferredLocation,
           seniority: inferredSeniority,
           perPage: 20,
@@ -111,6 +125,9 @@ export default function CandidateList({
         setSourceStarted(false);
         setSearchNotice(null);
         setSearchStrategy(null);
+        setPipelineCounts(null);
+        setFilterRejections({});
+        setCandidateDecisions({});
       } catch (e) {
         if (active) setError(e instanceof Error ? e.message : "Failed to load job description");
       } finally {
@@ -135,18 +152,24 @@ export default function CandidateList({
         allCandidates,
       });
       setCandidates(res.candidates);
+      setCandidateDecisions({});
       setFilters(defaultFilters);
       setPage(1);
       setRequiredSkills(res.required_skills || res.search_skills || []);
+      setGoodToHaveSkills(res.good_to_have_skills || []);
       setExperienceRequirement(res.experience_requirement || res.search_seniority || null);
       setSearchNotice(res.search_notice || null);
       setSearchStrategy(res.search_strategy || null);
+      setPipelineCounts(res.pipeline_counts || null);
+      setFilterRejections(res.filter_rejections || {});
       setExpandedIds(new Set(res.candidates.slice(0, 1).map((candidate: Candidate) => candidate.id)));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load candidates");
       setCandidates([]);
       setSearchNotice(null);
       setSearchStrategy(null);
+      setPipelineCounts(null);
+      setFilterRejections({});
     } finally {
       setLoading(false);
     }
@@ -171,6 +194,10 @@ export default function CandidateList({
     setPage(1);
   }
 
+  function setCandidateDecision(candidateId: string, decision: CandidateDecision) {
+    setCandidateDecisions((prev) => ({ ...prev, [candidateId]: decision }));
+  }
+
   return (
     <div className="candidate-page">
       <div className="candidate-toolbar">
@@ -183,13 +210,16 @@ export default function CandidateList({
         </div>
       </div>
 
-      {(requiredSkills.length > 0 || experienceRequirement) && (
+      {(requiredSkills.length > 0 || goodToHaveSkills.length > 0 || experienceRequirement) && (
         <div className="sourcing-requirements-band">
           <span className="muted small">Reviewer checklist</span>
           <div className="requirement-chip-list">
             {experienceRequirement && <span className="experience-chip">Experience: {experienceRequirement}</span>}
             {requiredSkills.slice(0, 12).map((skill) => (
-              <span key={skill}>{skill}</span>
+              <span key={skill}>Must: {skill}</span>
+            ))}
+            {goodToHaveSkills.slice(0, 8).map((skill) => (
+              <span className="optional-chip" key={skill}>Good: {skill}</span>
             ))}
           </div>
         </div>
@@ -205,6 +235,7 @@ export default function CandidateList({
         <SourceFilterPanel
           jd={jd}
           availableSkills={requiredSkills}
+          goodToHaveSkills={goodToHaveSkills}
           experienceRequirement={experienceRequirement}
           filters={sourceFilters}
           onChange={setSourceFilters}
@@ -221,10 +252,23 @@ export default function CandidateList({
         </div>
       )}
 
-      {sourceStarted && !loading && !error && (searchNotice || searchStrategy) && (
+      {sourceStarted && !loading && !error && (searchNotice || searchStrategy || pipelineCounts || Object.keys(filterRejections).length > 0) && (
         <div className="source-search-summary">
           {searchStrategy && <strong>Search used: {searchStrategy}</strong>}
           {searchNotice && <p>{searchNotice}</p>}
+          {pipelineCounts && (
+            <p>
+              Pipeline: {pipelineCounts.retrieved_from_zoho} retrieved, {pipelineCounts.deterministic_filtered} passed filters, {pipelineCounts.sent_to_scoring} scored, {pipelineCounts.sent_to_llm} sent to LLM, {pipelineCounts.returned} returned.
+            </p>
+          )}
+          {Object.keys(filterRejections).length > 0 && (
+            <div className="filter-rejection-list">
+              <strong>Why candidates were rejected</strong>
+              {Object.entries(filterRejections).slice(0, 5).map(([reason, count]) => (
+                <span key={reason}>{count} - {reason}</span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -264,7 +308,9 @@ export default function CandidateList({
                       candidate={candidate}
                       expanded={expandedIds.has(candidate.id)}
                       initials={initials(candidate.full_name)}
+                      decision={candidateDecisions[candidate.id]}
                       onToggle={() => toggleExpand(candidate.id)}
+                      onDecision={(decision) => setCandidateDecision(candidate.id, decision)}
                     />
                   ))}
                 </div>
@@ -295,6 +341,7 @@ export default function CandidateList({
 function SourceFilterPanel({
   jd,
   availableSkills,
+  goodToHaveSkills,
   experienceRequirement,
   filters,
   onChange,
@@ -303,6 +350,7 @@ function SourceFilterPanel({
 }: {
   jd: JD;
   availableSkills: string[];
+  goodToHaveSkills: string[];
   experienceRequirement: string | null;
   filters: SourceFilters;
   onChange: (filters: SourceFilters) => void;
@@ -323,7 +371,7 @@ function SourceFilterPanel({
         <p className="eyebrow">Pre-source filters</p>
         <h3>Choose Zoho filters before ranking</h3>
         <p className="muted">
-          Skills and location narrow the Zoho fetch. Experience is applied during ranking so strong candidates are not discarded because of ATS wording differences.
+          Must-have skills are combined with AND. Good-to-have skills and JD/recruiter locations are combined with OR before candidates are sent to ranking.
         </p>
       </div>
 
@@ -341,7 +389,7 @@ function SourceFilterPanel({
           />
         </label>
         <label>
-          Experience / seniority for ranking
+          Experience / seniority
           <input
             value={filters.seniority}
             onChange={(e) => onChange({ ...filters, seniority: e.target.value })}
@@ -361,8 +409,8 @@ function SourceFilterPanel({
 
       <div className="source-skill-picker">
         <div>
-          <strong>Skills to include</strong>
-          <span className="muted small">Select at least one skill for Zoho search.</span>
+          <strong>Must-have skills</strong>
+          <span className="muted small">Selected skills become AND conditions in Zoho search.</span>
         </div>
         <div className="requirement-chip-list">
           {availableSkills.map((skill) => (
@@ -377,6 +425,20 @@ function SourceFilterPanel({
           ))}
         </div>
       </div>
+
+      {goodToHaveSkills.length > 0 && (
+        <div className="source-skill-picker">
+          <div>
+            <strong>Good-to-have skills</strong>
+            <span className="muted small">These are sent as OR conditions to narrow the Zoho result set.</span>
+          </div>
+          <div className="requirement-chip-list">
+            {goodToHaveSkills.map((skill) => (
+              <span className="source-skill-chip optional" key={skill}>{skill}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="source-filter-actions">
         <button className="primary-button" disabled={filters.skills.length === 0} onClick={onStart}>
@@ -565,6 +627,16 @@ function listFromUnknown(value: unknown): string[] {
   return [];
 }
 
+function listFromContentField(content: string | null, key: string): string[] {
+  if (!content) return [];
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" ? listFromUnknown(parsed[key]) : [];
+  } catch {
+    return [];
+  }
+}
+
 function stringFromUnknown(value: unknown): string {
   if (typeof value === "string" || typeof value === "number") return String(value);
   return "";
@@ -574,12 +646,16 @@ function CandidateCard({
   candidate,
   expanded,
   initials,
+  decision,
   onToggle,
+  onDecision,
 }: {
   candidate: Candidate;
   expanded: boolean;
   initials: string;
+  decision?: CandidateDecision;
   onToggle: () => void;
+  onDecision: (decision: CandidateDecision) => void;
 }) {
   const matchedSkills = candidate.skills.filter((skill) => !candidate.missing_skills.includes(skill));
   const fitTone = candidate.match_percentage >= 80 ? "strong" : candidate.match_percentage >= 50 ? "possible" : "weak";
@@ -631,6 +707,23 @@ function CandidateCard({
       <button className="candidate-toggle" onClick={onToggle}>
         {expanded ? "Hide analysis" : "View analysis"}
       </button>
+
+      <div className="candidate-decision-actions">
+        <button
+          className={decision === "rejected" ? "danger-button active" : "danger-button"}
+          type="button"
+          onClick={() => onDecision("rejected")}
+        >
+          Reject
+        </button>
+        <button
+          className={decision === "accepted" ? "primary-button active" : "secondary-button"}
+          type="button"
+          onClick={() => onDecision("accepted")}
+        >
+          Accept
+        </button>
+      </div>
 
       {expanded && (
         <div className="candidate-analysis">

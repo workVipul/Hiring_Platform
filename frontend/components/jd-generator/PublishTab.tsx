@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 
 import { jdApi } from "@/services/jdApi";
 import type { GeneratedJD, JD } from "@/types/jd";
+import TemplateChooser from "./TemplateChooser";
 
 export default function PublishTab({
   jd,
   savedJD,
+  onChange,
   onPublished,
 }: {
   jd: GeneratedJD | null;
   savedJD: JD | null;
+  onChange: (jd: GeneratedJD) => void;
   onPublished: (jd: JD) => void;
 }) {
   const [loading, setLoading] = useState(false);
@@ -90,8 +93,9 @@ export default function PublishTab({
     <div className="panel stack">
       <div>
         <h2>{jd.title}</h2>
-        <p className="muted">The PDF preview is generated automatically from the reviewed JD.</p>
+        <p className="muted">Choose a template, then preview and publish the reviewed JD.</p>
       </div>
+      <TemplateChooser jd={jd} onChange={onChange} />
       <div className="publish-actions">
         {(previewPdfUrl || publishedPdfUrl) && (
           <a href={previewPdfUrl || publishedPdfUrl || ""} download className="secondary-button">

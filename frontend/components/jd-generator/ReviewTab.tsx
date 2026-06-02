@@ -64,6 +64,8 @@ export default function ReviewTab({
         <label>Nice to have<textarea value={(currentJD.nice_to_have ?? []).join("\n")} onChange={(e) => updateList("nice_to_have", e.target.value)} rows={4} /></label>
         <label>Soft skills<textarea value={(currentJD.soft_skills ?? []).join("\n")} onChange={(e) => updateList("soft_skills", e.target.value)} rows={4} /></label>
 
+        {false && (
+        <>
         {/* Canva-Style Template Chooser Section */}
         <div style={{ marginTop: "24px", borderTop: "1px solid var(--border)", paddingTop: "20px", marginBottom: "20px" }}>
           <h3 style={{ fontSize: "14px", fontWeight: "700", color: "var(--text)", marginBottom: "4px" }}>Select PDF Template</h3>
@@ -230,6 +232,9 @@ export default function ReviewTab({
             })}
           </div>
         </div>
+
+        </>
+        )}
 
         <button className="primary-button" onClick={onNext}>Continue to Publish</button>
       </div>

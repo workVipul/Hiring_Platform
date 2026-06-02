@@ -3,6 +3,7 @@ import json
 import re
 from app.llm.factory import get_llm_provider
 from app.models.jd import JD
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -181,8 +182,8 @@ class CandidateRankingEngine:
         # 2. Sort by heuristic match percentage descending
         candidates.sort(key=lambda x: x["heuristic"]["match_percentage"], reverse=True)
 
-        # 3. Split into top 5 candidates for LLM scoring and remaining candidates
-        top_n = 5
+        # 3. Split into configurable top candidates for LLM scoring and remaining candidates.
+        top_n = max(0, min(len(candidates), settings.SOURCING_LLM_RANK_LIMIT))
         to_llm = candidates[:top_n]
         remaining = candidates[top_n:]
 

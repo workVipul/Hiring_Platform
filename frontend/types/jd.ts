@@ -57,3 +57,34 @@ export interface JDPublishRequest {
   resume_skills?: string[];
   metadata?: Record<string, unknown>;
 }
+
+export interface ZohoJobOpening {
+  id: string;
+  Posting_Title?: string | null;
+  Client_Name?: string | null;
+  Job_Description?: string | null;
+  Required_Skill_Set?: string | null;
+  Work_Experience?: string | null;
+  Job_Type?: string | null;
+  Remote_Job?: boolean | null;
+  City?: string | null;
+  State?: string | null;
+  Country?: string | null;
+  No_of_Positions?: number | null;
+  Job_Opening_Status?: string | null;
+  Date_Opened?: string | null;
+  Target_Date?: string | null;
+  Salary?: number | string | null;
+  Created_Time?: string | null;
+  [key: string]: unknown;
+}
+
+export interface ZohoJobOpeningsResponse {
+  data: ZohoJobOpening[];
+  info?: {
+    per_page?: number;
+    count?: number;
+    page?: number;
+    more_records?: boolean;
+  };
+}

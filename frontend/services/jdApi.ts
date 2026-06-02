@@ -1,4 +1,4 @@
-import type { GeneratedJD, JD, JDCreate, JDListResponse, JDPublishRequest } from "@/types/jd";
+import type { GeneratedJD, JD, JDCreate, JDListResponse, JDPublishRequest, ZohoJobOpeningsResponse } from "@/types/jd";
 
 const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
@@ -55,6 +55,8 @@ export const jdApi = {
       method: "POST",
       body: JSON.stringify({ raw_input, input_type }),
     }),
+  zohoJobOpenings: (page = 1, perPage = 200): Promise<ZohoJobOpeningsResponse> =>
+    req(`/api/v1/jds/zoho/job-openings?page=${page}&per_page=${perPage}`),
   transcribe: (file: File): Promise<{ text: string }> => {
     const form = new FormData();
     form.append("file", file);
@@ -74,15 +76,31 @@ export const jdApi = {
     location?: string;
     seniority?: string;
     allCandidates?: boolean;
+    noticePeriod?: string;
+    currentCompany?: string;
+    education?: string;
+    employmentType?: string;
+    visaStatus?: string;
+    availability?: string;
+    relocationPreference?: string;
   }): Promise<{
     jd_id: number;
     jd_title: string;
     search_skills: string[];
     required_skills: string[];
+    good_to_have_skills?: string[];
     search_location?: string | null;
     search_seniority?: string | null;
     search_strategy?: string | null;
     search_notice?: string | null;
+    pipeline_counts?: {
+      retrieved_from_zoho: number;
+      deterministic_filtered: number;
+      sent_to_scoring: number;
+      sent_to_llm: number;
+      returned: number;
+    };
+    filter_rejections?: Record<string, number>;
     experience_requirement: string | null;
     candidates: any[];
     total: number;
@@ -96,6 +114,13 @@ export const jdApi = {
     if (filters?.location) params.set("location", filters.location);
     if (filters?.seniority) params.set("seniority", filters.seniority);
     if (filters?.allCandidates) params.set("all_candidates", "true");
+    if (filters?.noticePeriod) params.set("notice_period", filters.noticePeriod);
+    if (filters?.currentCompany) params.set("current_company", filters.currentCompany);
+    if (filters?.education) params.set("education", filters.education);
+    if (filters?.employmentType) params.set("employment_type", filters.employmentType);
+    if (filters?.visaStatus) params.set("visa_status", filters.visaStatus);
+    if (filters?.availability) params.set("availability", filters.availability);
+    if (filters?.relocationPreference) params.set("relocation_preference", filters.relocationPreference);
     return req(`/api/v1/sourcing/candidates?${params.toString()}`);
   },
   delete: (id: number): Promise<void> => req(`/api/v1/jds/${id}`, { method: "DELETE" }),

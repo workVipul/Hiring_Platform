@@ -4,42 +4,109 @@ import time
 import re
 import httpx
 from app.core.config import settings
+from app.services.criteria_builder import and_group, contains, greater_or_equal, less_or_equal, or_group, serialize_criteria
 
 logger = logging.getLogger(__name__)
 
 def build_criteria(
-    skills: list[str],
+    skills: list[str] | None = None,
+    must_have_skills: list[str] | None = None,
+    good_to_have_skills: list[str] | None = None,
     title: str | None = None,
-    location: str | None = None,
-    seniority: str | None = None
+    location: str | list[str] | None = None,
+    seniority: str | None = None,
+    experience_min_years: float | None = None,
+    experience_max_years: float | None = None,
+    notice_period: str | None = None,
+    current_company: str | None = None,
+    education: str | None = None,
+    employment_type: str | None = None,
+    visa_status: str | None = None,
+    availability: str | None = None,
+    relocation_preference: str | None = None,
+    require_good_to_have_match: bool = False,
 ) -> str:
     groups = []
 
-    # 1. Skills are the safest pre-ranking filter. Use OR inside the skill group,
-    # then AND the group with location/seniority when provided.
-    if skills:
-        clean_skills = [s.strip() for s in skills if s.strip()]
-        skill_clauses = [f"((Skill_Set:contains:{skill}))" for skill in clean_skills[:5]]
-        if skill_clauses:
-            groups.append("(" + "or".join(skill_clauses) + ")")
+    # Must-have skills are strict pre-LLM gates. Every must-have skill must match.
+    # The older `skills` argument is treated as must-have for backwards compatibility.
+    clean_must_have = unique_terms([*(must_have_skills or []), *(skills or [])])
+    groups.extend(contains("Skill_Set", skill) for skill in clean_must_have[:8])
+
+    # Good-to-have skills are optional ranking signals by default. Only include them
+    # in Zoho criteria when the caller explicitly wants at least one preferred skill.
+    clean_good_to_have = [skill for skill in unique_terms(good_to_have_skills or []) if skill.lower() not in {s.lower() for s in clean_must_have}]
+    good_to_have_group = or_group(*(contains("Skill_Set", skill) for skill in clean_good_to_have[:8]))
+    if require_good_to_have_match and good_to_have_group.children:
+        groups.append(good_to_have_group)
             
-    # 2. Location. The mock Zoho API stores location across City/State/Country,
-    # not a single Location field.
+    # Location can come from the JD, recruiter filter, or both. Treat those sources
+    # as alternatives, then AND that location group with the skills.
     if location:
-        location_clauses = []
-        for term in location_terms(location):
-            location_clauses.extend([
-                f"((City:contains:{term}))",
-                f"((State:contains:{term}))",
-                f"((Country:contains:{term}))",
+        location_conditions = []
+        location_values = location if isinstance(location, list) else [location]
+        for value in location_values:
+            if not value:
+                continue
+            for term in location_terms(value):
+                location_conditions.extend([
+                    contains("City", term),
+                    contains("State", term),
+                    contains("Country", term),
+                ])
+        location_group = or_group(*unique_nodes(location_conditions))
+        if location_group.children:
+            groups.append(location_group)
+
+    if seniority:
+        seniority_conditions = []
+        for level in seniority_to_zoho_levels(seniority):
+            seniority_conditions.extend([
+                contains("Experience_Level", level),
+                contains("Current_Job_Title", level),
             ])
-        if location_clauses:
-            groups.append("(" + "or".join(location_clauses) + ")")
+        seniority_group = or_group(*unique_nodes(seniority_conditions))
+        if seniority_group.children:
+            groups.append(seniority_group)
+
+    groups.extend([
+        greater_or_equal("Experience_in_Years", experience_min_years),
+        less_or_equal("Experience_in_Years", experience_max_years),
+        contains("Notice_Period", notice_period),
+        contains("Current_Employer", current_company),
+        contains("Highest_Qualification_Held", education),
+        contains("Employment_Type", employment_type),
+        contains("Visa_Status", visa_status),
+        contains("Candidate_Status", availability),
+        contains("Relocation_Preference", relocation_preference),
+    ])
             
-    if not groups:
-        return ""
-        
-    return "and".join(groups)
+    return serialize_criteria(and_group(*groups))
+
+
+def unique_terms(values: list[str]) -> list[str]:
+    seen = set()
+    result = []
+    for value in values:
+        text = str(value).strip()
+        key = text.lower()
+        if text and key not in seen:
+            result.append(text)
+            seen.add(key)
+    return result
+
+
+def unique_nodes(values: list) -> list:
+    seen = set()
+    result = []
+    for value in values:
+        if value is None:
+            continue
+        key = value.serialize()
+        if key and key not in seen:
+            result.append(value)
+            seen.add(key)
+    return result
 
 
 def normalize_location(value: str) -> str:
@@ -133,15 +200,44 @@ class ZohoRecruitService:
     @classmethod
     async def fetch_candidates(
         cls,
-        skills: list[str],
+        skills: list[str] | None = None,
+        must_have_skills: list[str] | None = None,
+        good_to_have_skills: list[str] | None = None,
         title: str | None = None,
-        location: str | None = None,
+        location: str | list[str] | None = None,
         seniority: str | None = None,
+        experience_min_years: float | None = None,
+        experience_max_years: float | None = None,
+        notice_period: str | None = None,
+        current_company: str | None = None,
+        education: str | None = None,
+        employment_type: str | None = None,
+        visa_status: str | None = None,
+        availability: str | None = None,
+        relocation_preference: str | None = None,
+        require_good_to_have_match: bool = False,
         page: int = 1,
         per_page: int = 20,
         all_candidates: bool = False,
     ) -> list[dict]:
-        criteria = build_criteria(skills, title, location, seniority)
+        criteria = build_criteria(
+            skills=skills,
+            must_have_skills=must_have_skills,
+            good_to_have_skills=good_to_have_skills,
+            title=title,
+            location=location,
+            seniority=seniority,
+            experience_min_years=experience_min_years,
+            experience_max_years=experience_max_years,
+            notice_period=notice_period,
+            current_company=current_company,
+            education=education,
+            employment_type=employment_type,
+            visa_status=visa_status,
+            availability=availability,
+            relocation_preference=relocation_preference,
+            require_good_to_have_match=require_good_to_have_match,
+        )
         if not criteria and not all_candidates:
             return []
 
@@ -189,7 +285,7 @@ class ZohoRecruitService:
                         # Extract first and last name safely
                         first_name = c.get("First_Name") or ""
                         last_name = c.get("Last_Name") or ""
-                        full_name = f"{first_name} {last_name}".strip() or "Anonymous Candidate"
+                        full_name = c.get("Full_Name") or f"{first_name} {last_name}".strip() or "Anonymous Candidate"
 
                         # Location resilient mapping
                         loc_parts = []

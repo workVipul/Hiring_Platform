@@ -6,12 +6,19 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.core.security import get_access_type, get_current_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.jd import JD
 from app.models.jd_detail import JDDetail
 from app.models.user import User
 from app.services.zoho_service import ZohoRecruitService
 from app.services.ranking_service import CandidateRankingEngine
+from app.services.candidate_filtering import (
+    CandidateFilterSpec,
+    deterministic_filter_candidates,
+    summarize_filter_rejections,
+    score_and_reduce_candidates,
+)
 
 router = APIRouter(prefix="/api/v1/sourcing", tags=["Sourcing"])
 
@@ -23,6 +30,13 @@ class SourcingRequest(BaseModel):
     location: str | None = None
     seniority: str | None = None
     all_candidates: bool = False
+    notice_period: str | None = None
+    current_company: str | None = None
+    education: str | None = None
+    employment_type: str | None = None
+    visa_status: str | None = None
+    availability: str | None = None
+    relocation_preference: str | None = None
 
 def visible_jd(db: Session, user: User, jd_id: int):
     query = db.query(JD).filter(JD.id == jd_id)
@@ -42,32 +56,44 @@ def merge_candidates(existing: list[dict], incoming: list[dict]) -> list[dict]:
     return merged
 
 
-def filter_attempts(skills: list[str], location: str | None) -> list[dict]:
-    attempts = [
-        {
-            "label": "Skills + location",
-            "skills": skills,
-            "location": location,
-            "seniority": None,
-        },
-        {
-            "label": "Skills only",
-            "skills": skills,
-            "location": None,
-            "seniority": None,
-        },
-    ]
-    unique_attempts = []
+def list_from_unknown(value) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return []
+
+
+def unique_keep_order(values: list[str]) -> list[str]:
     seen = set()
-    for attempt in attempts:
-        key = (
-            tuple(attempt["skills"]),
-            attempt["location"] or "",
-        )
-        if key not in seen and attempt["skills"]:
-            unique_attempts.append(attempt)
+    result = []
+    for value in values:
+        text = str(value).strip()
+        key = text.lower()
+        if text and key not in seen:
+            result.append(text)
             seen.add(key)
-    return unique_attempts
+    return result
+
+
+def combine_locations(*values: str | None) -> list[str]:
+    locations = []
+    for value in values:
+        if not value:
+            continue
+        import re
+        locations.extend([part.strip() for part in re.split(r"\bor\b|[,|;/]", str(value), flags=re.IGNORECASE) if part.strip()])
+    return unique_keep_order(locations)
+
+
+def number_from_unknown(value) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        import re
+        match = re.search(r"\d+(?:\.\d+)?", value)
+        return float(match.group(0)) if match else None
+    return None
 
 
 def jd_for_ranking(jd: JD, experience_or_seniority: str | None):
@@ -97,6 +123,13 @@ async def build_candidate_response(
     filter_location: str | None = None,
     filter_seniority: str | None = None,
     all_candidates: bool = False,
+    notice_period: str | None = None,
+    current_company: str | None = None,
+    education: str | None = None,
+    employment_type: str | None = None,
+    visa_status: str | None = None,
+    availability: str | None = None,
+    relocation_preference: str | None = None,
 ):
     # 1. Fetch Job Description
     jd = visible_jd(db, current_user, jd_id)
@@ -106,17 +139,25 @@ async def build_candidate_response(
     # 2. Extract skills from JD Details or fallback to parsed content / title
     detail = db.query(JDDetail).filter(JDDetail.jd_id == jd.id).first()
     skills = []
+    must_have_skills = []
+    good_to_have_skills = []
     location = None
     seniority = None
     experience_requirement = None
+    experience_min_years = None
+    experience_max_years = None
     
     if detail:
         if isinstance(detail.skills, list):
             skills = [s for s in detail.skills if s]
         if isinstance(detail.metadata_json, dict):
+            must_have_skills = list_from_unknown(detail.metadata_json.get("must_have_skills"))
+            good_to_have_skills = list_from_unknown(detail.metadata_json.get("preferred_skills"))
             location = detail.metadata_json.get("location")
             seniority = detail.metadata_json.get("seniority")
             experience_requirement = detail.metadata_json.get("experience_years") or detail.metadata_json.get("experience")
+            experience_min_years = number_from_unknown(detail.metadata_json.get("experience_min_years"))
+            experience_max_years = number_from_unknown(detail.metadata_json.get("experience_max_years"))
 
     if not skills or not location or not seniority:
         try:
@@ -126,6 +167,8 @@ async def build_candidate_response(
                     skills = [s for s in content_data["skills"] if s]
                 if "metadata" in content_data and isinstance(content_data["metadata"], dict):
                     metadata = content_data["metadata"]
+                    must_have_skills = must_have_skills or list_from_unknown(metadata.get("must_have_skills"))
+                    good_to_have_skills = good_to_have_skills or list_from_unknown(metadata.get("preferred_skills"))
                     location = location or metadata.get("location")
                     seniority = seniority or metadata.get("seniority")
                     experience_requirement = (
@@ -133,30 +176,57 @@ async def build_candidate_response(
                         or metadata.get("experience")
                         or experience_requirement
                     )
+                    experience_min_years = experience_min_years or number_from_unknown(metadata.get("experience_min_years"))
+                    experience_max_years = experience_max_years or number_from_unknown(metadata.get("experience_max_years"))
                 if not location and "location" in content_data:
                     location = content_data.get("location")
                 if not seniority and "seniority" in content_data:
                     seniority = content_data.get("seniority")
+                if not good_to_have_skills:
+                    good_to_have_skills = list_from_unknown(content_data.get("nice_to_have"))
         except Exception:
             pass
 
+    must_have_skills = unique_keep_order(must_have_skills or skills)
+    good_to_have_skills = unique_keep_order(good_to_have_skills)
+
     if not skills and jd.title and not all_candidates:
         skills = [jd.title]
+    if not must_have_skills and skills:
+        must_have_skills = unique_keep_order(skills)
 
-    if not skills and not all_candidates:
+    if not must_have_skills and not all_candidates:
         raise HTTPException(
             status_code=400, 
             detail="Job Description lacks skills or title for Zoho criteria building"
         )
 
     # Recruiter-selected filters are applied before Zoho fetch and before LLM ranking.
+    # Selected skills are treated as must-have gates. JD location and recruiter location
+    # are combined with OR semantics inside the Zoho criteria.
     selected_skills = [skill for skill in (filter_skills or []) if str(skill).strip()]
-    search_skills = [] if all_candidates else (selected_skills or skills)[:5]
-    search_location = None if all_candidates else (filter_location or location)
+    search_must_have_skills = [] if all_candidates else unique_keep_order(selected_skills or must_have_skills)[:8]
+    search_good_to_have_skills = [] if all_candidates else [skill for skill in good_to_have_skills[:8] if skill.lower() not in {s.lower() for s in search_must_have_skills}]
+    search_locations = [] if all_candidates else combine_locations(location, filter_location)
+    search_location = " OR ".join(search_locations) if search_locations else None
     search_seniority = None if all_candidates else (filter_seniority or seniority)
+    filter_spec = CandidateFilterSpec(
+        must_have_skills=search_must_have_skills,
+        good_to_have_skills=search_good_to_have_skills,
+        locations=search_locations,
+        experience_min_years=experience_min_years,
+        experience_max_years=experience_max_years,
+        notice_period=notice_period,
+        current_company=current_company,
+        education=education,
+        employment_type=employment_type,
+        visa_status=visa_status,
+        availability=availability,
+        relocation_preference=relocation_preference,
+    )
 
     candidates = []
-    search_strategy = "All candidates" if all_candidates else "Skills + location"
+    search_strategy = "All candidates" if all_candidates else "Zoho API hard-filtered retrieval"
     search_notice = None
 
     if all_candidates:
@@ -170,51 +240,75 @@ async def build_candidate_response(
             all_candidates=True,
         )
     else:
-        # Query location-aware first, then broaden to skills-only if needed.
-        # Experience/title are handled during ranking because the mock Zoho schema stores
-        # years numerically and title as Current_Job_Title, not criteria-friendly fields.
-        target_count = per_page
-        attempts_used = []
-        for attempt in filter_attempts(search_skills, search_location):
-            attempt_candidates = await ZohoRecruitService.fetch_candidates(
-                skills=attempt["skills"],
+        for zoho_page in range(page, page + settings.SOURCING_MAX_ZOHO_PAGES):
+            page_candidates = await ZohoRecruitService.fetch_candidates(
+                must_have_skills=search_must_have_skills,
+                good_to_have_skills=search_good_to_have_skills,
                 title=jd.title,
-                location=attempt["location"],
-                seniority=attempt["seniority"],
-                page=page,
-                per_page=per_page,
+                location=search_locations,
+                seniority=search_seniority,
+                experience_min_years=experience_min_years,
+                experience_max_years=experience_max_years,
+                notice_period=notice_period,
+                current_company=current_company,
+                education=education,
+                employment_type=employment_type,
+                visa_status=visa_status,
+                availability=availability,
+                relocation_preference=relocation_preference,
+                page=zoho_page,
+                per_page=settings.SOURCING_ZOHO_PAGE_SIZE,
             )
-            attempts_used.append(attempt["label"])
-            candidates = merge_candidates(candidates, attempt_candidates)
-            if len(candidates) >= target_count:
+            candidates = merge_candidates(candidates, page_candidates)
+            if len(page_candidates) < settings.SOURCING_ZOHO_PAGE_SIZE or len(candidates) >= settings.SOURCING_SCORING_LIMIT:
                 break
 
-        search_strategy = attempts_used[-1] if attempts_used else search_strategy
-        if len(attempts_used) > 1:
-            search_notice = (
-                "Location-aware filters returned too few candidates, so the search was broadened to skills before ranking. "
-                "Experience and title are still considered during ranking."
-            )
+        search_notice = (
+            "Zoho search received the hard filters directly: AND across must-have skills, "
+            "OR across JD/recruiter locations, experience range, and recruiter hard filters. "
+            "Good-to-have skills are kept for scoring/ranking, not rejection."
+        )
+
+    retrieved_count = len(candidates)
+    filtered_candidates = deterministic_filter_candidates(candidates, filter_spec) if not all_candidates else candidates
+    filter_rejections = summarize_filter_rejections(candidates, filter_spec) if not all_candidates else {}
+    deterministic_count = len(filtered_candidates)
+    reduced_candidates = score_and_reduce_candidates(
+        filtered_candidates,
+        filter_spec,
+        settings.SOURCING_SCORING_LIMIT,
+    )
 
     ranking_jd = jd_for_ranking(jd, search_seniority)
 
-    # 4. Rank candidates using LLM engine
+    # 4. Rank reduced candidates using LLM engine.
     ranked_candidates = await CandidateRankingEngine.rank_candidates(
-        candidates=candidates,
+        candidates=reduced_candidates,
         jd=ranking_jd,
-        jd_skills=skills
+        jd_skills=search_must_have_skills or skills
     )
+    result_limit = min(per_page, settings.SOURCING_RESULT_LIMIT)
+    ranked_candidates = ranked_candidates[:result_limit]
 
     return {
         "jd_id": jd.id,
         "jd_title": jd.title,
-        "search_skills": search_skills,
-        "required_skills": skills,
+        "search_skills": search_must_have_skills,
+        "required_skills": search_must_have_skills,
+        "good_to_have_skills": search_good_to_have_skills,
         "search_location": search_location,
         "search_seniority": search_seniority,
         "experience_requirement": experience_requirement or seniority,
         "search_strategy": search_strategy,
         "search_notice": search_notice,
+        "pipeline_counts": {
+            "retrieved_from_zoho": retrieved_count,
+            "deterministic_filtered": deterministic_count,
+            "sent_to_scoring": len(reduced_candidates),
+            "sent_to_llm": min(len(reduced_candidates), settings.SOURCING_LLM_RANK_LIMIT),
+            "returned": len(ranked_candidates),
+        },
+        "filter_rejections": filter_rejections,
         "candidates": ranked_candidates,
         "total": len(ranked_candidates)
     }
@@ -229,11 +323,35 @@ async def source_candidates(
     location: str | None = Query(None),
     seniority: str | None = Query(None),
     all_candidates: bool = Query(False),
+    notice_period: str | None = Query(None),
+    current_company: str | None = Query(None),
+    education: str | None = Query(None),
+    employment_type: str | None = Query(None),
+    visa_status: str | None = Query(None),
+    availability: str | None = Query(None),
+    relocation_preference: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     filter_skills = [skill.strip() for skill in (skills or "").split(",") if skill.strip()] or None
-    return await build_candidate_response(jd_id, page, per_page, db, current_user, filter_skills, location, seniority, all_candidates)
+    return await build_candidate_response(
+        jd_id,
+        page,
+        per_page,
+        db,
+        current_user,
+        filter_skills,
+        location,
+        seniority,
+        all_candidates,
+        notice_period,
+        current_company,
+        education,
+        employment_type,
+        visa_status,
+        availability,
+        relocation_preference,
+    )
 
 
 @router.post("/candidates")
@@ -252,4 +370,11 @@ async def source_candidates_legacy(
         payload.location,
         payload.seniority,
         payload.all_candidates,
+        payload.notice_period,
+        payload.current_company,
+        payload.education,
+        payload.employment_type,
+        payload.visa_status,
+        payload.availability,
+        payload.relocation_preference,
     )

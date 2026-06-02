@@ -1,9 +1,11 @@
 import json
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+import httpx
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import get_access_type, get_current_user
 from app.db.session import get_db
 from app.llm.factory import get_llm_provider
@@ -200,6 +202,31 @@ async def generate_jd(payload: JDGenerateRequest):
         return normalize_generated_jd(result)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"LLM generation failed: {exc}") from exc
+
+
+@router.get("/zoho/job-openings", response_model=dict)
+async def list_zoho_job_openings(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(200, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                settings.ZOHO_JOB_OPENINGS_URL,
+                params={"page": page, "per_page": per_page},
+            )
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text or "Zoho Recruit returned an error"
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Zoho Recruit fetch failed: {exc}") from exc
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+        raise HTTPException(status_code=502, detail="Zoho Recruit returned an unexpected response")
+    return payload
 
 
 @router.post("/transcribe", response_model=dict)

@@ -22,11 +22,19 @@ class Settings(BaseSettings):
 
     # Zoho portal candidates search demo configuration
     ZOHO_BASE_URL: str = "https://zohorecruit.thankfulrock-f57331b9.centralindia.azurecontainerapps.io/recruit/v2/Candidates"
+    ZOHO_JOB_OPENINGS_URL: str = "https://zohorecruit.thankfulrock-f57331b9.centralindia.azurecontainerapps.io/recruit/v2/Job_Openings"
     ZOHO_API_KEY: str = ""
     ZOHO_CLIENT_ID: str = ""
     ZOHO_CLIENT_SECRET: str = ""
     ZOHO_REFRESH_TOKEN: str = ""
     ZOHO_ACCOUNTS_URL: str = "https://accounts.zoho.com"
+
+    # Sourcing pipeline thresholds
+    SOURCING_MAX_ZOHO_PAGES: int = 5
+    SOURCING_ZOHO_PAGE_SIZE: int = 100
+    SOURCING_SCORING_LIMIT: int = 500
+    SOURCING_LLM_RANK_LIMIT: int = 50
+    SOURCING_RESULT_LIMIT: int = 50
 
     class Config:
         env_file = ".env"

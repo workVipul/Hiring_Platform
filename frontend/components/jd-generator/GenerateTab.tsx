@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import ConfirmDialog from "@/components/dashboard/ConfirmDialog";
 import { jdApi } from "@/services/jdApi";
-import type { GeneratedJD } from "@/types/jd";
+import type { GeneratedJD, ZohoJobOpening } from "@/types/jd";
 
-type InputType = "text" | "voice" | "chat";
+type InputType = "text" | "voice" | "chat" | "zoho";
 type ChatMessage = { role: "recruiter" | "assistant"; content: string };
 
 const inputChecklist = [
@@ -102,6 +102,9 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [zohoLoading, setZohoLoading] = useState(false);
+  const [zohoOpenings, setZohoOpenings] = useState<ZohoJobOpening[]>([]);
+  const [selectedZohoId, setSelectedZohoId] = useState("");
   const [pendingGenerationInput, setPendingGenerationInput] = useState<string | null>(null);
   const [missingChecklistItems, setMissingChecklistItems] = useState<string[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -131,6 +134,13 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: "smooth" });
   }, [inputType, messages]);
 
+  useEffect(() => {
+    if (inputType === "zoho" && zohoOpenings.length === 0 && !zohoLoading) {
+      void loadZohoOpenings();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputType]);
+
   async function executeGenerate(input: string) {
     setLoading(true);
     setError(null);
@@ -142,6 +152,25 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadZohoOpenings() {
+    setZohoLoading(true);
+    setError(null);
+    try {
+      const result = await jdApi.zohoJobOpenings(1, 200);
+      setZohoOpenings(result.data ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Zoho Recruit job fetch failed");
+    } finally {
+      setZohoLoading(false);
+    }
+  }
+
+  function selectZohoOpening(jobId: string) {
+    setSelectedZohoId(jobId);
+    const opening = zohoOpenings.find((item) => item.id === jobId);
+    setRawInput(opening ? formatZohoOpeningForGeneration(opening) : "");
   }
 
   async function handleGenerate(inputOverride?: string) {
@@ -268,13 +297,14 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     text: "Text",
     voice: "Voice & Video",
     chat: "Chat",
+    zoho: "Zoho Recruit",
   };
 
   return (
     <div className="generate-layout">
       <div className="panel stack generate-input-panel">
         <div className="segmented">
-          {(["text", "voice", "chat"] as const).map((type) => (
+          {(["text", "voice", "chat", "zoho"] as const).map((type) => (
             <button key={type} className={inputType === type ? "active" : ""} onClick={() => setInputType(type)}>
               {tabLabels[type]}
             </button>
@@ -357,9 +387,42 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
           </div>
         )}
 
+        {inputType === "zoho" && (
+          <div className="zoho-generator stack">
+            <div className="zoho-toolbar">
+              <label>
+                Job opening
+                <select value={selectedZohoId} onChange={(e) => selectZohoOpening(e.target.value)} disabled={zohoLoading}>
+                  <option value="">{zohoLoading ? "Loading Zoho jobs..." : "Select a Zoho Recruit job ID"}</option>
+                  {zohoOpenings.map((opening) => (
+                    <option key={opening.id} value={opening.id}>
+                      {opening.id} - {opening.Posting_Title ?? "Untitled opening"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="secondary-button compact-button" disabled={zohoLoading} onClick={loadZohoOpenings}>
+                {zohoLoading ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+            {selectedZohoId && (
+              <div className="zoho-selected-card">
+                <strong>{zohoOpenings.find((item) => item.id === selectedZohoId)?.Posting_Title ?? "Selected Zoho job"}</strong>
+                <span>{selectedZohoId}</span>
+              </div>
+            )}
+            <textarea
+              value={rawInput}
+              onChange={(e) => setRawInput(e.target.value)}
+              placeholder="Select a Zoho Recruit job to generate a JD from its job opening fields."
+              rows={12}
+            />
+          </div>
+        )}
+
         {error && <p className="error">{error}</p>}
         {inputType !== "chat" && (
-          <button className="primary-button" disabled={loading || generationInput.trim().length < 10} onClick={() => handleGenerate()}>
+          <button className="primary-button" disabled={loading || zohoLoading || generationInput.trim().length < 10} onClick={() => handleGenerate()}>
             {loading ? "Generating..." : "Generate JD"}
           </button>
         )}
@@ -429,6 +492,26 @@ function countRecruiterAnswers(input: string): number {
 
 function formatMessages(messages: ChatMessage[]): string {
   return messages.map((message) => `${message.role}: ${message.content}`).join("\n");
+}
+
+function formatZohoOpeningForGeneration(opening: ZohoJobOpening): string {
+  const location = [opening.City, opening.State, opening.Country].filter(Boolean).join(", ");
+  return [
+    `Zoho Recruit Job ID: ${opening.id}`,
+    `Posting Title: ${opening.Posting_Title ?? ""}`,
+    `Client Name: ${opening.Client_Name ?? ""}`,
+    `Job Description: ${opening.Job_Description ?? ""}`,
+    `Required Skill Set: ${opening.Required_Skill_Set ?? ""}`,
+    `Work Experience: ${opening.Work_Experience ?? ""}`,
+    `Job Type: ${opening.Job_Type ?? ""}`,
+    `Remote Job: ${opening.Remote_Job === true ? "Yes" : opening.Remote_Job === false ? "No" : ""}`,
+    `Location: ${location}`,
+    `Number of Positions: ${opening.No_of_Positions ?? ""}`,
+    `Opening Status: ${opening.Job_Opening_Status ?? ""}`,
+    `Date Opened: ${opening.Date_Opened ?? ""}`,
+    `Target Date: ${opening.Target_Date ?? ""}`,
+    `Salary: ${opening.Salary ?? ""}`,
+  ].filter((line) => !line.endsWith(": ")).join("\n");
 }
 
 function audioBufferToWav(buffer: AudioBuffer): Blob {
