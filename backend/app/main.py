@@ -10,7 +10,7 @@ from sqlalchemy import inspect, text
 
 # Import all models so SQLAlchemy registers them before create_all runs.
 # If you skip this, Base.metadata won't know about the JD table.
-from app.models import jd, jd_detail, user, user_access  # noqa: F401
+from app.models import jd, jd_detail, jd_template, user, user_access  # noqa: F401
 
 # Import routers
 from app.api.auth_routes import router as auth_router
@@ -66,7 +66,21 @@ def drop_legacy_jd_score_column() -> None:
         logger.warning("Could not drop legacy jds.jd_score column: %s", exc)
 
 
+def ensure_jd_template_module_column() -> None:
+    try:
+        inspector = inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("jd_templates")}
+        if "module_name" in columns:
+            return
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE jd_templates ADD COLUMN module_name VARCHAR(255)"))
+        logger.info("Added jd_templates.module_name column.")
+    except Exception as exc:
+        logger.warning("Could not ensure jd_templates.module_name column: %s", exc)
+
+
 drop_legacy_jd_score_column()
+ensure_jd_template_module_column()
 
 # ---- Routes ----
 app.include_router(auth_router)

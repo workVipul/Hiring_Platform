@@ -72,9 +72,9 @@ def evaluate_candidate(candidate: dict, spec: CandidateFilterSpec) -> dict[str, 
     candidate_skills = candidate.get("skills") or split_skill_set(raw.get("Skill_Set"))
 
     if spec.must_have_skills:
-        has_any_must_have = any(skill_matches(skill, candidate_skills) for skill in spec.must_have_skills)
-        if not has_any_must_have:
-            reasons.append(f"Missing mandatory skills (needs at least one): {', '.join(spec.must_have_skills[:5])}")
+        missing_must_have = [skill for skill in spec.must_have_skills if not skill_matches(skill, candidate_skills)]
+        if missing_must_have:
+            reasons.append(f"Missing mandatory skills: {', '.join(missing_must_have[:5])}")
 
     if spec.locations and not matches_any_location(candidate, raw, spec.locations):
         reasons.append("Location does not match JD or recruiter filter")
@@ -135,11 +135,8 @@ def deterministic_score(candidate: dict, spec: CandidateFilterSpec) -> int:
 
 def matches_any_location(candidate: dict, raw: dict, locations: list[str]) -> bool:
     candidate_terms = expand_location_terms([
-        candidate.get("location"),
-        raw.get("Location"),
         raw.get("City"),
-        raw.get("State"),
-        raw.get("Country"),
+        first_location_part(candidate.get("location")),
     ])
     expected_terms = expand_location_terms(locations)
     return bool(candidate_terms & expected_terms)
@@ -190,3 +187,9 @@ def split_skill_set(value: object) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     return [part.strip() for part in re.split(r"[,;\n]", str(value)) if part.strip()]
+
+
+def first_location_part(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).split(",")[0].strip()

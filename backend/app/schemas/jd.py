@@ -105,6 +105,8 @@ def normalize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
             metadata[key] = f"{value:g} years"
         elif isinstance(value, str) and re.fullmatch(r"\d+(\.\d+)?\+?", value.strip()):
             metadata[key] = f"{value.strip()} years"
+        elif isinstance(value, str) and not has_explicit_years(value):
+            metadata.pop(key, None)
 
     for key in ("experience_min_years", "experience_max_years"):
         value = metadata.get(key)
@@ -114,11 +116,18 @@ def normalize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
                 number = float(match.group(0))
                 metadata[key] = int(number) if number.is_integer() else number
 
-    if "experience_years" in metadata:
+    if "experience_years" in metadata and has_explicit_years(str(metadata["experience_years"])):
         min_years, max_years = infer_experience_range(str(metadata["experience_years"]))
         metadata.setdefault("experience_min_years", min_years)
         metadata.setdefault("experience_max_years", max_years)
+    elif "experience_years" not in metadata:
+        metadata.pop("experience_min_years", None)
+        metadata.pop("experience_max_years", None)
     return metadata
+
+
+def has_explicit_years(text: str) -> bool:
+    return bool(re.search(r"\b\d+(?:\.\d+)?\+?\s*(?:years?|yrs?)\b", text, flags=re.IGNORECASE))
 
 
 def infer_experience_range(text: str) -> tuple[int | None, int | None]:

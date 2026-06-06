@@ -30,14 +30,13 @@ type CandidateFilters = {
   rawField: string;
   rawValue: string;
   fit: "all" | "strong" | "possible" | "weak";
-  missingOnly: boolean;
   sort: "rank" | "match_desc" | "skill_desc" | "experience_desc" | "name_asc";
 };
 
 type SourceFilters = {
   skills: string[];
   goodSkills: string[];
-  location: string;
+  locations: string[];
   recency: string;
 };
 
@@ -51,7 +50,6 @@ const defaultFilters: CandidateFilters = {
   rawField: "all",
   rawValue: "",
   fit: "all",
-  missingOnly: false,
   sort: "rank",
 };
 
@@ -83,7 +81,7 @@ export default function CandidateList({
     returned: number;
   } | null>(null);
   const [filterRejections, setFilterRejections] = useState<Record<string, number>>({});
-  const [sourceFilters, setSourceFilters] = useState<SourceFilters>({ skills: [], goodSkills: [], location: "", recency: "all" });
+  const [sourceFilters, setSourceFilters] = useState<SourceFilters>({ skills: [], goodSkills: [], locations: [], recency: "all" });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [candidateDecisions, setCandidateDecisions] = useState<Record<string, CandidateDecision>>({});
   const [filters, setFilters] = useState<CandidateFilters>(defaultFilters);
@@ -118,7 +116,7 @@ export default function CandidateList({
         setSourceFilters({
           skills: inferredMustHave.slice(0, 8),
           goodSkills: inferredGoodToHave.slice(0, 8),
-          location: inferredLocation,
+          locations: cityListFromLocation(inferredLocation),
           recency: "all",
         });
         setCandidates([]);
@@ -147,7 +145,7 @@ export default function CandidateList({
     try {
       const res = await jdApi.sourceCandidates(jdId, 1, 100, {
         skills: allCandidates ? [] : sourceFilters.skills,
-        location: allCandidates ? undefined : sourceFilters.location.trim() || undefined,
+        location: allCandidates ? undefined : sourceFilters.locations.join(",") || undefined,
         allCandidates,
         recency: allCandidates ? undefined : sourceFilters.recency !== "all" ? sourceFilters.recency : undefined,
         goodSkills: allCandidates ? [] : sourceFilters.goodSkills,
@@ -360,13 +358,15 @@ function SourceFilterPanel({
   onStart: () => void;
   onStartAll: () => void;
 }) {
+  const locationOptions = buildSourceLocationOptions(jd, filters.locations);
+
   return (
     <div className="source-filter-panel">
       <div className="source-filter-copy">
         <p className="eyebrow">Pre-source filters</p>
         <h3>Choose Zoho filters before ranking</h3>
         <p className="muted">
-          Must-have skills are combined with OR. Good-to-have skills and JD/recruiter locations are combined with OR before candidates are sent to ranking.
+          Must-have skills are combined with AND. Selected city locations are combined with OR before candidates are sent to ranking.
         </p>
       </div>
 
@@ -382,20 +382,21 @@ function SourceFilterPanel({
           </label>
         )}
         <label>
-          Location
+          City locations
           <select
-            value={filters.location}
-            onChange={(e) => onChange({ ...filters, location: e.target.value })}
+            multiple
+            value={filters.locations}
+            onChange={(e) => onChange({
+              ...filters,
+              locations: Array.from(e.target.selectedOptions).map((option) => option.value),
+            })}
             style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
           >
-            <option value="">All locations</option>
-            <option value="Bangalore">Bangalore</option>
-            <option value="Delhi">Delhi</option>
-            <option value="Mumbai">Mumbai</option>
-            <option value="Pune">Pune</option>
-            <option value="Hyderabad">Hyderabad</option>
-            <option value="Chennai">Chennai</option>
+            {locationOptions.map((location) => (
+              <option key={location} value={location}>{location}</option>
+            ))}
           </select>
+          <span className="muted small">Hold Ctrl or Cmd to select multiple cities. Leave blank for all cities.</span>
         </label>
         <label>
           Recency
@@ -425,7 +426,7 @@ function SourceFilterPanel({
         <div className="source-skill-picker">
           <div>
             <strong>Good-to-have skills</strong>
-            <span className="muted small">Click to select or deselect preferred skills to narrow the Zoho result set.</span>
+            <span className="muted small">Click to select or deselect preferred skills used as scoring signals after hard filtering.</span>
           </div>
           <div className="requirement-chip-list">
             {goodToHaveSkills.map((skill) => {
@@ -581,18 +582,13 @@ function CandidateFilterSidebar({
         </select>
       </label>
 
-      <label className="filter-checkbox">
-        <input type="checkbox" checked={filters.missingOnly} onChange={(e) => onChange("missingOnly", e.target.checked)} />
-        Show candidates with missing skills
-      </label>
-
       <button className="ghost-button" onClick={onReset}>Reset filters</button>
     </aside>
   );
 }
 
 function buildFilterOptions(candidates: Candidate[]) {
-  const locations = uniqueSorted(candidates.map((candidate) => candidate.location).filter(isUsefulValue));
+  const locations = uniqueSorted(candidates.map((candidate) => candidateCity(candidate)).filter(isUsefulValue));
   const experienceLevels = uniqueSorted(candidates.map((candidate) => candidate.experience_level).filter(isUsefulValue));
   const skills = uniqueSorted(candidates.flatMap((candidate) => candidate.skills || []).filter(isUsefulValue));
   const rawFields = uniqueSorted(candidates.flatMap((candidate) => Object.keys(candidate.raw_profile || {})).filter(isUsefulValue));
@@ -602,7 +598,7 @@ function buildFilterOptions(candidates: Candidate[]) {
 function applyCandidateFilters(candidates: Candidate[], filters: CandidateFilters) {
   const query = filters.query.trim().toLowerCase();
   const filtered = candidates.filter((candidate) => {
-    if (filters.location !== "all" && candidate.location !== filters.location) return false;
+    if (filters.location !== "all" && candidateCity(candidate) !== filters.location) return false;
     if (filters.experience !== "all" && candidate.experience_level !== filters.experience) return false;
     if (filters.selectedSkills && filters.selectedSkills.length > 0) {
       if (!filters.selectedSkills.every((s) => candidate.skills.includes(s))) return false;
@@ -612,7 +608,6 @@ function applyCandidateFilters(candidates: Candidate[], filters: CandidateFilter
       if (!rawValue.includes(filters.rawValue.trim().toLowerCase())) return false;
     }
     if (filters.fit !== "all" && fitBand(candidate) !== filters.fit) return false;
-    if (filters.missingOnly && candidate.missing_skills.length === 0) return false;
     if (!query) return true;
     return searchableCandidateText(candidate).includes(query);
   });
@@ -645,6 +640,38 @@ function searchableCandidateText(candidate: Candidate): string {
     ...(candidate.missing_skills || []),
     ...rawValues,
   ].join(" ").toLowerCase();
+}
+
+function candidateCity(candidate: Candidate): string {
+  const rawCity = candidate.raw_profile?.City;
+  if (typeof rawCity === "string" && rawCity.trim()) return rawCity.trim();
+  return firstCityToken(candidate.location);
+}
+
+function firstCityToken(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.split(",")[0].trim();
+}
+
+function cityListFromLocation(value: string): string[] {
+  return firstCityToken(value) ? [firstCityToken(value)] : [];
+}
+
+function buildSourceLocationOptions(jd: JD, selectedLocations: string[]): string[] {
+  const jdCity = cityListFromLocation(stringFromUnknown(jd.metadata?.location));
+  return uniqueSorted([
+    ...jdCity,
+    ...selectedLocations,
+    "Bengaluru",
+    "Bangalore",
+    "Hyderabad",
+    "Pune",
+    "Mumbai",
+    "Delhi",
+    "Chennai",
+    "Noida",
+    "Gurugram",
+  ]);
 }
 
 function uniqueSorted(values: string[]): string[] {

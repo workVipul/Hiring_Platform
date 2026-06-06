@@ -1,4 +1,4 @@
-import type { GeneratedJD, JD, JDCreate, JDListResponse, JDPublishRequest, ZohoJobOpeningsResponse } from "@/types/jd";
+import type { GeneratedJD, JD, JDCreate, JDListResponse, JDPublishRequest, JDTemplate, ZohoJobOpeningsResponse } from "@/types/jd";
 
 const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
@@ -71,6 +71,17 @@ export const jdApi = {
     req(`/api/v1/jds/${id}/publish`, { method: "POST", body: JSON.stringify(payload) }),
   preview: (payload: JDPublishRequest): Promise<{ pdf_url: string }> =>
     req("/api/v1/jds/preview", { method: "POST", body: JSON.stringify(payload) }),
+  listTemplates: (): Promise<{ items: JDTemplate[] }> => req("/api/v1/jds/templates"),
+  uploadTemplate: (name: string, file: File, description?: string): Promise<JDTemplate> => {
+    const form = new FormData();
+    form.append("name", name);
+    if (description) form.append("description", description);
+    form.append("file", file);
+    return req("/api/v1/jds/templates/upload", { method: "POST", body: form });
+  },
+  deleteTemplate: (templateId: string): Promise<void> => {
+    return req(`/api/v1/jds/templates/${encodeURIComponent(templateId)}`, { method: "DELETE" });
+  },
   sourceCandidates: (jdId: number, page = 1, perPage = 100, filters?: {
     skills?: string[];
     location?: string;
@@ -95,6 +106,7 @@ export const jdApi = {
     search_seniority?: string | null;
     search_strategy?: string | null;
     search_notice?: string | null;
+    zoho_criteria?: string | null;
     pipeline_counts?: {
       retrieved_from_zoho: number;
       deterministic_filtered: number;

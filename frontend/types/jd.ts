@@ -58,6 +58,17 @@ export interface JDPublishRequest {
   metadata?: Record<string, unknown>;
 }
 
+export interface JDTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  file_url?: string | null;
+  module_name?: string | null;
+  prompt?: string | null;
+  is_custom: boolean;
+  created_at?: string;
+}
+
 export interface ZohoJobOpening {
   id: string;
   Posting_Title?: string | null;

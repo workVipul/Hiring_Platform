@@ -286,8 +286,9 @@ async def build_candidate_response(
                 break
 
         search_notice = (
-            "Zoho search query was filtered on must-have skills and locations. "
-            "Experience, seniority, and recruiter hard filters are applied during post-retrieval processing."
+            "Zoho search query is filtered with AND across must-have skills and OR across selected city values. "
+            "City matching uses the City field only; state/country are not used for city pre-filtering. "
+            "Experience and supported recruiter hard filters are included in the Zoho criteria when provided."
         )
 
     retrieved_count = len(candidates)
@@ -300,7 +301,7 @@ async def build_candidate_response(
         settings.SOURCING_SCORING_LIMIT,
     )
 
-    ranking_jd = jd_for_ranking(jd, search_seniority)
+    ranking_jd = jd_for_ranking(jd, experience_requirement)
 
     # 4. Rank reduced candidates using LLM engine.
     ranked_candidates = await CandidateRankingEngine.rank_candidates(
@@ -335,7 +336,7 @@ async def build_candidate_response(
         "good_to_have_skills": search_good_to_have_skills,
         "search_location": search_location,
         "search_seniority": search_seniority,
-        "experience_requirement": experience_requirement or seniority,
+        "experience_requirement": experience_requirement,
         "search_strategy": search_strategy,
         "search_notice": search_notice,
         "zoho_criteria": zoho_criteria,

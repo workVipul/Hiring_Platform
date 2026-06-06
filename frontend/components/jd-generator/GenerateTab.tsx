@@ -20,9 +20,9 @@ const inputChecklist = [
   {
     id: "experience",
     label: "Experience range",
-    hint: "Years, seniority, or level",
-    question: "What experience range or seniority should candidates have?",
-    pattern: /\b(experience|years?|yrs?|senior|junior|mid[- ]level|lead|principal|fresher|\d+\s*\+?\s*(years?|yrs?))\b/i,
+    hint: "Work Experience: 5 to 8 Years",
+    question: "What is the numeric work experience range?",
+    pattern: /\bwork\s+experience\s*:\s*\d+(?:\.\d+)?\s*(?:to|-)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?)\b/i,
   },
   {
     id: "skills",
@@ -40,10 +40,10 @@ const inputChecklist = [
   },
   {
     id: "location",
-    label: "Location and work mode",
-    hint: "City plus onsite, hybrid, or remote",
-    question: "Where is the role based, and is it onsite, hybrid, or remote?",
-    pattern: /\b(location|onsite|on-site|hybrid|remote|work mode|office|bangalore|bengaluru|pune|mumbai|chennai|hyderabad|delhi|noida|gurgaon|gurugram)\b/i,
+    label: "Job location",
+    hint: "City or geography only",
+    question: "What city or geography is the role based in?",
+    pattern: /\b(location|city|based in|office in|work location|bangalore|bengaluru|pune|mumbai|chennai|hyderabad|delhi|noida|gurgaon|gurugram)\b/i,
   },
   {
     id: "extras",
@@ -55,7 +55,7 @@ const inputChecklist = [
 ];
 const chatQuestions = inputChecklist.map((item) => item.question);
 const followUpQuestion = "Any other information to include? If not, choose Generate now.";
-const generationPromptPlaceholder = "Example: Generate a JD for a Senior Java Architect with 8-12 years of experience in Bangalore, hybrid mode. Must-have skills are Core Java, Spring Boot, microservices, REST APIs, SQL, AWS, and system design. The person will lead architecture, guide engineers, review designs, and own delivery quality. Good to have Kafka, Kubernetes, fintech domain exposure, and strong stakeholder communication.";
+const generationPromptPlaceholder = "Example: Generate a JD for a Senior Java Architect. Work Experience: 8 to 12 Years. Location: Bangalore. Work mode: hybrid. Must-have skills are Core Java, Spring Boot, microservices, REST APIs, SQL, AWS, and system design. The person will lead architecture, guide engineers, review designs, and own delivery quality. Good to have Kafka, Kubernetes, fintech domain exposure, and strong stakeholder communication.";
 
 type SpeechRecognitionResultItem = {
   transcript: string;

@@ -23,6 +23,7 @@ export default function ReviewTab({
 
   const currentJD = jd;
   const improvementSuggestions = getQualitySuggestions(currentJD);
+  const canPublish = improvementSuggestions.length === 0;
 
   function updateField(key: "title" | "summary" | "compensation" | "about_company", value: string) {
     onChange({ ...currentJD, [key]: value });
@@ -236,7 +237,22 @@ export default function ReviewTab({
         </>
         )}
 
-        <button className="primary-button" onClick={onNext}>Continue to Publish</button>
+        {!canPublish && (
+          <div className="review-publish-gate">
+            <strong>Resolve Improve this JD items</strong>
+            <p className="muted small">Continue to Publish is available once these quality gaps are resolved.</p>
+            <div className="quality-suggestion-list">
+              {improvementSuggestions.map((item) => (
+                <div className="quality-suggestion-item" key={item}>
+                  <span />
+                  <p>{item}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button className="primary-button" disabled={!canPublish} onClick={onNext}>Continue to Publish</button>
       </div>
 
       <aside className="review-sidebar">
