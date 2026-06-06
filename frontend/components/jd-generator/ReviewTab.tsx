@@ -23,7 +23,8 @@ export default function ReviewTab({
 
   const currentJD = jd;
   const improvementSuggestions = getQualitySuggestions(currentJD);
-  const canPublish = improvementSuggestions.length === 0;
+  const blockingSuggestions = getBlockingPublishGaps(currentJD);
+  const canPublish = blockingSuggestions.length === 0;
 
   function updateField(key: "title" | "summary" | "compensation" | "about_company", value: string) {
     onChange({ ...currentJD, [key]: value });
@@ -240,9 +241,9 @@ export default function ReviewTab({
         {!canPublish && (
           <div className="review-publish-gate">
             <strong>Resolve Improve this JD items</strong>
-            <p className="muted small">Continue to Publish is available once these quality gaps are resolved.</p>
+            <p className="muted small">Continue to Publish is available once these required details are resolved.</p>
             <div className="quality-suggestion-list">
-              {improvementSuggestions.map((item) => (
+              {blockingSuggestions.map((item) => (
                 <div className="quality-suggestion-item" key={item}>
                   <span />
                   <p>{item}</p>
@@ -317,6 +318,19 @@ function getQualitySuggestions(jd: GeneratedJD): string[] {
   if (isMissingContext(domain)) suggestions.push("Add domain, client, product, or project context if relevant.");
 
   return uniqueSuggestions(suggestions).slice(0, 6);
+}
+
+function getBlockingPublishGaps(jd: GeneratedJD): string[] {
+  const gaps: string[] = [];
+  const metadata = jd.metadata ?? {};
+  const mustHaveSkills = listFromUnknown(metadata.must_have_skills);
+
+  if (isMissingContext(jd.title)) gaps.push("Add the role title.");
+  if (isMissingContext(getExperience(jd))) gaps.push("Add a clear experience range, for example Work Experience: 5 to 8 Years.");
+  if (isMissingContext(metadata.location)) gaps.push("Add the job location or hiring geography.");
+  if (mustHaveSkills.length < 1 && (jd.skills ?? []).length < 1) gaps.push("Add at least one must-have technical skill.");
+
+  return uniqueSuggestions(gaps);
 }
 
 function isMissingContext(value: unknown): boolean {

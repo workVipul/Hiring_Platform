@@ -56,7 +56,7 @@ export default function TemplateChooser({
         template: "corporate",
         template_prompt: undefined,
         template_file_url: undefined,
-        template_module_name: undefined,
+        template_definition_version: undefined,
       },
     });
   }
@@ -69,7 +69,7 @@ export default function TemplateChooser({
         template: template.id,
         template_prompt: template.prompt ?? undefined,
         template_file_url: template.file_url ?? undefined,
-        template_module_name: template.module_name ?? undefined,
+        template_definition_version: template.version ?? undefined,
       },
     });
   }

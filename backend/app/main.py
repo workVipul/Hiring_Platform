@@ -70,13 +70,15 @@ def ensure_jd_template_module_column() -> None:
     try:
         inspector = inspect(engine)
         columns = {column["name"] for column in inspector.get_columns("jd_templates")}
-        if "module_name" in columns:
-            return
         with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE jd_templates ADD COLUMN module_name VARCHAR(255)"))
-        logger.info("Added jd_templates.module_name column.")
+            if "definition_json" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN definition_json JSON"))
+                logger.info("Added jd_templates.definition_json column.")
+            if "version" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN version INTEGER DEFAULT 1 NOT NULL"))
+                logger.info("Added jd_templates.version column.")
     except Exception as exc:
-        logger.warning("Could not ensure jd_templates.module_name column: %s", exc)
+        logger.warning("Could not ensure jd_templates custom template columns: %s", exc)
 
 
 drop_legacy_jd_score_column()

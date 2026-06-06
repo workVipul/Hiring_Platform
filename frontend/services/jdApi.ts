@@ -72,6 +72,8 @@ export const jdApi = {
   preview: (payload: JDPublishRequest): Promise<{ pdf_url: string }> =>
     req("/api/v1/jds/preview", { method: "POST", body: JSON.stringify(payload) }),
   listTemplates: (): Promise<{ items: JDTemplate[] }> => req("/api/v1/jds/templates"),
+  getTemplate: (templateId: string): Promise<JDTemplate> =>
+    req(`/api/v1/jds/templates/${encodeURIComponent(templateId)}`),
   uploadTemplate: (name: string, file: File, description?: string): Promise<JDTemplate> => {
     const form = new FormData();
     form.append("name", name);
@@ -79,6 +81,10 @@ export const jdApi = {
     form.append("file", file);
     return req("/api/v1/jds/templates/upload", { method: "POST", body: form });
   },
+  updateTemplate: (templateId: string, payload: { name?: string; description?: string | null; definition_json?: Record<string, unknown> }): Promise<JDTemplate> =>
+    req(`/api/v1/jds/templates/${encodeURIComponent(templateId)}`, { method: "PUT", body: JSON.stringify(payload) }),
+  previewTemplate: (templateId: string): Promise<{ pdf_url: string }> =>
+    req(`/api/v1/jds/templates/${encodeURIComponent(templateId)}/preview`, { method: "POST" }),
   deleteTemplate: (templateId: string): Promise<void> => {
     return req(`/api/v1/jds/templates/${encodeURIComponent(templateId)}`, { method: "DELETE" });
   },

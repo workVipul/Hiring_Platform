@@ -63,7 +63,8 @@ export interface JDTemplate {
   name: string;
   description?: string | null;
   file_url?: string | null;
-  module_name?: string | null;
+  definition_json?: Record<string, unknown> | null;
+  version?: number;
   prompt?: string | null;
   is_custom: boolean;
   created_at?: string;

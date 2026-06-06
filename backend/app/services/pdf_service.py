@@ -1,6 +1,5 @@
 import json
 import logging
-from importlib import import_module
 from pathlib import Path
 
 from app.core.config import settings
@@ -28,8 +27,11 @@ def write_simple_pdf(title: str, content: str, jd_id: int | str) -> str:
     # Route to the appropriate template module
     try:
         if template.startswith("custom-"):
-            generate = load_custom_template_generator(template, metadata)
-            generate(output_path, title, data, metadata)
+            from app.services.dynamic_template_renderer import render_dynamic_template
+            definition = lookup_custom_template_definition(template)
+            if not definition:
+                raise ValueError(f"Custom template {template} does not have a JSON definition")
+            render_dynamic_template(output_path, title, data, metadata, definition)
         elif template == "modern":
             from app.services.modern_template import generate
             generate(output_path, title, data, metadata)
@@ -55,25 +57,7 @@ def write_simple_pdf(title: str, content: str, jd_id: int | str) -> str:
     return f"uploads/{filename}"
 
 
-def load_custom_template_generator(template_id: str, metadata: dict):
-    module_name = metadata.get("template_module_name")
-    if not module_name:
-        module_name = lookup_custom_template_module(template_id)
-    if not module_name:
-        raise ValueError(f"Custom template {template_id} does not have a generated Python module")
-
-    safe_module = str(module_name).replace("-", "_")
-    if not safe_module.startswith("generated_jd_template_"):
-        raise ValueError(f"Invalid custom template module name: {module_name}")
-
-    module = import_module(f"app.services.{safe_module}")
-    generate = getattr(module, "generate", None)
-    if not callable(generate):
-        raise ValueError(f"Custom template module {safe_module} does not expose generate")
-    return generate
-
-
-def lookup_custom_template_module(template_id: str) -> str | None:
+def lookup_custom_template_definition(template_id: str) -> dict | None:
     try:
         numeric_id = int(template_id.replace("custom-", "", 1))
     except ValueError:
@@ -85,6 +69,6 @@ def lookup_custom_template_module(template_id: str) -> str | None:
     db = SessionLocal()
     try:
         template = db.query(JDTemplate).filter(JDTemplate.id == numeric_id, JDTemplate.is_active == True).first()  # noqa: E712
-        return template.module_name if template else None
+        return template.definition_json if template else None
     finally:
         db.close()

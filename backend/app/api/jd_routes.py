@@ -4,6 +4,7 @@ import re
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 import httpx
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -24,11 +25,18 @@ from app.schemas.jd import (
     JDResponse,
     normalize_generated_jd,
 )
+from app.schemas.template_dsl import TemplateDefinition
 from app.services.pdf_service import write_simple_pdf
-from app.services.template_codegen import generate_template_module
+from app.services.template_dsl_service import generate_template_definition
 
 
 router = APIRouter(prefix="/api/v1/jds", tags=["JDs"])
+
+
+class TemplateUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    definition_json: dict | None = None
 
 DEFAULT_TEMPLATE_PROMPT = """Use the Wissen Technology corporate classic JD PDF layout.
 Keep the official Wissen logo, use the platform color palette (#0A2246, #1A2D58, #445377, #57CFE4, #FF540A), preserve clean section hierarchy, and render the standardized JD sections with recruiter-friendly spacing."""
@@ -137,7 +145,8 @@ def serialize_template(template: JDTemplate) -> dict:
         "name": template.name,
         "description": template.description,
         "file_url": template.file_url,
-        "module_name": template.module_name,
+        "definition_json": template.definition_json,
+        "version": template.version,
         "prompt": template.prompt,
         "is_custom": True,
         "created_at": template.created_at,
@@ -476,7 +485,8 @@ def list_jd_templates(db: Session = Depends(get_db), current_user: User = Depend
                 "name": "Corporate Classic",
                 "description": "Standard Wissen presentation",
                 "file_url": None,
-                "module_name": None,
+                "definition_json": None,
+                "version": 1,
                 "prompt": DEFAULT_TEMPLATE_PROMPT,
                 "is_custom": False,
             },
@@ -540,25 +550,65 @@ async def upload_jd_template(
     db.add(template)
     db.flush()
 
-    try:
-        llm = get_llm_provider()
-        template.module_name = await generate_template_module(
-            llm=llm,
-            filename=filename,
-            extracted_text=extracted_text,
-            template_id=template.id,
-            template_name=template.name,
-            services_dir=Path(__file__).resolve().parent.parent / "services",
-        )
-    except Exception as exc:
-        db.rollback()
-        if stored_path.exists():
-            stored_path.unlink()
-        raise HTTPException(status_code=502, detail=f"Template Python generation failed: {exc}") from exc
+    llm = get_llm_provider()
+    definition = await generate_template_definition(
+        llm=llm,
+        filename=filename,
+        extracted_context=extracted_text,
+        template_name=template.name,
+        description=description,
+    )
+    template.definition_json = definition.model_dump(mode="json")
+    template.version = definition.schema_version
 
     db.commit()
     db.refresh(template)
     return serialize_template(template)
+
+
+@router.get("/templates/{template_id}", response_model=dict)
+def get_jd_template(template_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    numeric_template_id = parse_template_id(template_id)
+    template = db.query(JDTemplate).filter(JDTemplate.id == numeric_template_id, JDTemplate.is_active == True).first()  # noqa: E712
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return serialize_template(template)
+
+
+@router.put("/templates/{template_id}", response_model=dict)
+def update_jd_template(template_id: str, payload: TemplateUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if get_access_type(current_user, db) != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can update JD templates")
+
+    numeric_template_id = parse_template_id(template_id)
+    template = db.query(JDTemplate).filter(JDTemplate.id == numeric_template_id, JDTemplate.is_active == True).first()  # noqa: E712
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    if payload.name is not None:
+        template.name = payload.name.strip()
+    if payload.description is not None:
+        template.description = payload.description
+    if payload.definition_json is not None:
+        definition = TemplateDefinition.model_validate(payload.definition_json)
+        template.definition_json = definition.model_dump(mode="json")
+        template.version = template.version + 1
+    db.commit()
+    db.refresh(template)
+    return serialize_template(template)
+
+
+@router.post("/templates/{template_id}/preview", response_model=dict)
+def preview_jd_template(template_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    numeric_template_id = parse_template_id(template_id)
+    template = db.query(JDTemplate).filter(JDTemplate.id == numeric_template_id, JDTemplate.is_active == True).first()  # noqa: E712
+    if not template or not isinstance(template.definition_json, dict):
+        raise HTTPException(status_code=404, detail="Template definition not found")
+
+    sample = sample_jd_for_template_preview()
+    sample["metadata"] = {**sample.get("metadata", {}), "template": f"custom-{template.id}"}
+    pdf_url = write_simple_pdf(sample["title"], json.dumps(sample), f"template-preview-{template.id}")
+    return {"pdf_url": pdf_url}
 
 
 @router.delete("/templates/{template_id}", response_model=dict)
@@ -646,8 +696,6 @@ def template_paths_for_cleanup(template: JDTemplate) -> list[Path]:
         if relative.startswith("uploads/"):
             relative = relative.removeprefix("uploads/")
         paths.append(Path(settings.UPLOADS_DIR) / relative)
-    if template.module_name:
-        paths.append(Path(__file__).resolve().parent.parent / "services" / f"{template.module_name}.py")
     return paths
 
 
@@ -657,3 +705,73 @@ def parse_template_id(template_id: str) -> int:
         return int(raw_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid custom template id") from exc
+
+
+def sample_jd_for_template_preview() -> dict:
+    return {
+        "title": "Senior Java Backend Engineer",
+        "job_summary": "Wissen Technology is hiring a backend engineer to design and deliver scalable services for enterprise platforms.",
+        "summary": "Wissen Technology is hiring a backend engineer to design and deliver scalable services for enterprise platforms. The role involves API design, distributed systems thinking, production quality ownership, and close collaboration with product and delivery teams.",
+        "about_company": "Wissen Technology builds high-impact custom software products for global clients across financial services, healthcare, retail, and technology-led industries.",
+        "roles_and_responsibilities": [
+            "Design and build resilient Java and Spring Boot services.",
+            "Own API quality, performance, and production readiness.",
+            "Collaborate with cross-functional teams to deliver business outcomes.",
+            "Review technical designs and improve engineering standards.",
+        ],
+        "responsibilities": [
+            "Design and build resilient Java and Spring Boot services.",
+            "Own API quality, performance, and production readiness.",
+            "Collaborate with cross-functional teams to deliver business outcomes.",
+            "Review technical designs and improve engineering standards.",
+        ],
+        "required_skills": ["Java", "Spring Boot", "Microservices", "REST APIs", "SQL"],
+        "requirements": ["Java", "Spring Boot", "Microservices", "REST APIs", "SQL"],
+        "preferred_skills": ["AWS", "Docker", "Kubernetes"],
+        "nice_to_have": ["AWS", "Docker", "Kubernetes"],
+        "technical_skills": ["Java", "Spring Boot", "Microservices", "SQL", "Hibernate"],
+        "soft_skills": ["Clear communication", "Ownership", "Collaboration"],
+        "qualifications": ["B.Tech or equivalent engineering degree", "Strong backend engineering fundamentals"],
+        "education": "B.Tech / B.E. / MCA or equivalent",
+        "experience": "5 to 8 Years",
+        "location": "Bengaluru",
+        "employment_type": "Full Time",
+        "notice_period": "Immediate to 30 days preferred",
+        "salary_range": "As per company standards",
+        "benefits": ["Health insurance", "Learning programs", "Flexible hybrid work"],
+        "project_details": "Enterprise platform modernization with distributed backend services.",
+        "team_details": "Agile product engineering team working with architects, QA, DevOps, and product owners.",
+        "industry": "Enterprise Technology",
+        "department": "Engineering",
+        "reporting_manager": "Engineering Manager",
+        "travel_requirements": "Minimal travel as needed for client workshops",
+        "work_mode": "Hybrid",
+        "certifications": ["AWS certification preferred"],
+        "languages": ["English"],
+        "selection_process": ["Technical screening", "Architecture discussion", "Managerial round"],
+        "additional_information": "Candidates should be comfortable owning production services.",
+        "contact_information": "careers@wissen.com",
+        "skills": ["Java", "Spring Boot", "Microservices", "SQL"],
+        "metadata": {
+            "experience_years": "5 to 8 Years",
+            "location": "Bengaluru",
+            "work_mode": "Hybrid",
+            "department": "Engineering",
+            "industry_or_domain": "Enterprise Platforms",
+            "education": "B.Tech / B.E. / MCA or equivalent",
+            "employment_type": "Full Time",
+            "notice_period": "Immediate to 30 days preferred",
+            "salary_range": "As per company standards",
+            "benefits": ["Health insurance", "Learning programs", "Flexible hybrid work"],
+            "project_details": "Enterprise platform modernization with distributed backend services.",
+            "team_details": "Agile product engineering team.",
+            "industry": "Enterprise Technology",
+            "reporting_manager": "Engineering Manager",
+            "travel_requirements": "Minimal",
+            "certifications": ["AWS certification preferred"],
+            "languages": ["English"],
+            "selection_process": ["Technical screening", "Architecture discussion", "Managerial round"],
+            "additional_information": "Comfortable owning production services.",
+            "contact_information": "careers@wissen.com",
+        },
+    }

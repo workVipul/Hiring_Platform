@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { jdApi } from "@/services/jdApi";
 import type { JD } from "@/types/jd";
@@ -381,23 +381,16 @@ function SourceFilterPanel({
             <input value={String(jd.metadata.zoho_recruit_id)} disabled />
           </label>
         )}
-        <label>
-          City locations
-          <select
-            multiple
-            value={filters.locations}
-            onChange={(e) => onChange({
-              ...filters,
-              locations: Array.from(e.target.selectedOptions).map((option) => option.value),
-            })}
-            style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
-          >
-            {locationOptions.map((location) => (
-              <option key={location} value={location}>{location}</option>
-            ))}
-          </select>
-          <span className="muted small">Hold Ctrl or Cmd to select multiple cities. Leave blank for all cities.</span>
-        </label>
+        <div className="source-filter-field">
+          <span>City locations</span>
+          <CheckboxMultiSelect
+            label="City locations"
+            options={locationOptions}
+            selectedValues={filters.locations}
+            placeholder="All cities"
+            onChange={(locations) => onChange({ ...filters, locations })}
+          />
+        </div>
         <label>
           Recency
           <select value={filters.recency} onChange={(e) => onChange({ ...filters, recency: e.target.value })}>
@@ -463,6 +456,90 @@ function SourceFilterPanel({
           Source all candidates
         </button>
       </div>
+    </div>
+  );
+}
+
+function CheckboxMultiSelect({
+  label,
+  options,
+  selectedValues,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selectedValues: string[];
+  placeholder: string;
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!dropdownRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
+
+  function toggleValue(value: string) {
+    const nextValues = selectedValues.includes(value)
+      ? selectedValues.filter((item) => item !== value)
+      : [...selectedValues, value];
+    onChange(uniqueSorted(nextValues));
+  }
+
+  const selectedLabel = selectedValues.length === 0
+    ? placeholder
+    : selectedValues.length <= 2
+      ? selectedValues.join(", ")
+      : `${selectedValues.slice(0, 2).join(", ")} +${selectedValues.length - 2}`;
+
+  return (
+    <div className="checkbox-multiselect" ref={dropdownRef}>
+      <button
+        type="button"
+        className={open ? "checkbox-multiselect-trigger active" : "checkbox-multiselect-trigger"}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span className={selectedValues.length === 0 ? "placeholder" : ""}>{selectedLabel}</span>
+        <span className="checkbox-multiselect-caret">v</span>
+      </button>
+
+      {open && (
+        <div className="checkbox-multiselect-menu" role="listbox" aria-label={label}>
+          <div className="checkbox-multiselect-actions">
+            <button type="button" onClick={() => onChange(options)}>
+              Select all
+            </button>
+            <button type="button" onClick={() => onChange([])}>
+              Clear
+            </button>
+          </div>
+          <div className="checkbox-multiselect-options">
+            {options.map((option) => {
+              const checked = selectedValues.includes(option);
+              return (
+                <label key={option} className="checkbox-multiselect-option">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleValue(option)}
+                  />
+                  <span>{option}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

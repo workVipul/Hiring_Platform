@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, func
 
 from app.db.session import Base
 
@@ -10,7 +10,8 @@ class JDTemplate(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     file_url = Column(String(500), nullable=True)
-    module_name = Column(String(255), nullable=True)
+    definition_json = Column(JSON, nullable=True)
+    version = Column(Integer, default=1, nullable=False)
     prompt = Column(Text, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)

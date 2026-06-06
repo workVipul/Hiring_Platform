@@ -1447,6 +1447,126 @@ button.template-choice-card {
   gap: 14px;
 }
 
+.source-filter-field {
+  display: grid;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.checkbox-multiselect {
+  position: relative;
+  width: 100%;
+}
+
+.checkbox-multiselect-trigger {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.checkbox-multiselect-trigger.active,
+.checkbox-multiselect-trigger:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 45, 88, 0.1), inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.checkbox-multiselect-trigger span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkbox-multiselect-trigger .placeholder {
+  color: var(--muted);
+}
+
+.checkbox-multiselect-caret {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.checkbox-multiselect-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.checkbox-multiselect-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.checkbox-multiselect-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 4px 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.checkbox-multiselect-options {
+  display: grid;
+  gap: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.checkbox-multiselect-option {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.checkbox-multiselect-option:hover {
+  background: var(--surface-2);
+}
+
+.checkbox-multiselect-option input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
 .source-skill-picker {
   display: grid;
   gap: 12px;
