@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 import re
 from typing import Any
 
@@ -19,6 +20,19 @@ class CandidateFilterSpec:
     visa_status: str | None = None
     availability: str | None = None
     relocation_preference: str | None = None
+    recency_months: int | None = None
+
+
+def parse_datetime(dt_str: str) -> datetime | None:
+    if not dt_str:
+        return None
+    try:
+        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except Exception:
+        try:
+            return datetime.strptime(dt_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except Exception:
+            return None
 
 
 def deterministic_filter_candidates(candidates: list[dict], spec: CandidateFilterSpec) -> list[dict]:
@@ -57,12 +71,27 @@ def evaluate_candidate(candidate: dict, spec: CandidateFilterSpec) -> dict[str, 
     raw = candidate.get("raw_profile") or {}
     candidate_skills = candidate.get("skills") or split_skill_set(raw.get("Skill_Set"))
 
-    missing_must_have = [skill for skill in spec.must_have_skills if not skill_matches(skill, candidate_skills)]
-    if missing_must_have:
-        reasons.append(f"Missing mandatory skills: {', '.join(missing_must_have[:5])}")
+    if spec.must_have_skills:
+        has_any_must_have = any(skill_matches(skill, candidate_skills) for skill in spec.must_have_skills)
+        if not has_any_must_have:
+            reasons.append(f"Missing mandatory skills (needs at least one): {', '.join(spec.must_have_skills[:5])}")
 
     if spec.locations and not matches_any_location(candidate, raw, spec.locations):
         reasons.append("Location does not match JD or recruiter filter")
+
+    if spec.recency_months is not None:
+        updated_on = raw.get("Updated_On") or raw.get("Last_Activity_Time") or raw.get("Created_Time")
+        if not updated_on:
+            reasons.append("Missing update timestamp")
+        else:
+            cand_date = parse_datetime(str(updated_on))
+            if not cand_date:
+                reasons.append("Invalid update timestamp format")
+            else:
+                now = datetime.now(cand_date.tzinfo)
+                diff = now - cand_date
+                if diff.days > spec.recency_months * 30:
+                    reasons.append(f"Not updated within last {spec.recency_months} months")
 
     candidate_years = extract_years(raw.get("Experience_in_Years") or candidate.get("experience_level"))
     if spec.experience_min_years is not None and (candidate_years is None or candidate_years < spec.experience_min_years):

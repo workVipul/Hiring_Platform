@@ -37,6 +37,8 @@ class SourcingRequest(BaseModel):
     visa_status: str | None = None
     availability: str | None = None
     relocation_preference: str | None = None
+    recency: str | None = None
+    good_skills: list[str] | None = None
 
 def visible_jd(db: Session, user: User, jd_id: int):
     query = db.query(JD).filter(JD.id == jd_id)
@@ -130,6 +132,8 @@ async def build_candidate_response(
     visa_status: str | None = None,
     availability: str | None = None,
     relocation_preference: str | None = None,
+    recency: str | None = None,
+    filter_good_skills: list[str] | None = None,
 ):
     # 1. Fetch Job Description
     jd = visible_jd(db, current_user, jd_id)
@@ -206,10 +210,27 @@ async def build_candidate_response(
     # are combined with OR semantics inside the Zoho criteria.
     selected_skills = [skill for skill in (filter_skills or []) if str(skill).strip()]
     search_must_have_skills = [] if all_candidates else unique_keep_order(selected_skills or must_have_skills)[:8]
-    search_good_to_have_skills = [] if all_candidates else [skill for skill in good_to_have_skills[:8] if skill.lower() not in {s.lower() for s in search_must_have_skills}]
+    
+    if all_candidates:
+        search_good_to_have_skills = []
+    else:
+        if filter_good_skills is not None:
+            search_good_to_have_skills = [skill for skill in good_to_have_skills if skill in filter_good_skills]
+        else:
+            search_good_to_have_skills = good_to_have_skills
+        search_good_to_have_skills = unique_keep_order(search_good_to_have_skills)[:8]
+        search_good_to_have_skills = [skill for skill in search_good_to_have_skills if skill.lower() not in {s.lower() for s in search_must_have_skills}]
+
     search_locations = [] if all_candidates else combine_locations(location, filter_location)
     search_location = " OR ".join(search_locations) if search_locations else None
     search_seniority = None if all_candidates else (filter_seniority or seniority)
+
+    recency_months = None
+    if recency == "3_months":
+        recency_months = 3
+    elif recency == "6_months":
+        recency_months = 6
+
     filter_spec = CandidateFilterSpec(
         must_have_skills=search_must_have_skills,
         good_to_have_skills=search_good_to_have_skills,
@@ -223,6 +244,7 @@ async def build_candidate_response(
         visa_status=visa_status,
         availability=availability,
         relocation_preference=relocation_preference,
+        recency_months=recency_months,
     )
 
     candidates = []
@@ -264,9 +286,8 @@ async def build_candidate_response(
                 break
 
         search_notice = (
-            "Zoho search received the hard filters directly: AND across must-have skills, "
-            "OR across JD/recruiter locations, experience range, and recruiter hard filters. "
-            "Good-to-have skills are kept for scoring/ranking, not rejection."
+            "Zoho search query was filtered on must-have skills and locations. "
+            "Experience, seniority, and recruiter hard filters are applied during post-retrieval processing."
         )
 
     retrieved_count = len(candidates)
@@ -287,6 +308,22 @@ async def build_candidate_response(
         jd=ranking_jd,
         jd_skills=search_must_have_skills or skills
     )
+    from app.services.zoho_service import build_criteria
+    zoho_criteria = "" if all_candidates else build_criteria(
+        must_have_skills=search_must_have_skills,
+        good_to_have_skills=search_good_to_have_skills,
+        location=search_locations,
+        seniority=search_seniority,
+        experience_min_years=experience_min_years,
+        experience_max_years=experience_max_years,
+        notice_period=notice_period,
+        current_company=current_company,
+        education=education,
+        employment_type=employment_type,
+        visa_status=visa_status,
+        availability=availability,
+        relocation_preference=relocation_preference,
+    )
     result_limit = min(per_page, settings.SOURCING_RESULT_LIMIT)
     ranked_candidates = ranked_candidates[:result_limit]
 
@@ -301,6 +338,7 @@ async def build_candidate_response(
         "experience_requirement": experience_requirement or seniority,
         "search_strategy": search_strategy,
         "search_notice": search_notice,
+        "zoho_criteria": zoho_criteria,
         "pipeline_counts": {
             "retrieved_from_zoho": retrieved_count,
             "deterministic_filtered": deterministic_count,
@@ -330,10 +368,13 @@ async def source_candidates(
     visa_status: str | None = Query(None),
     availability: str | None = Query(None),
     relocation_preference: str | None = Query(None),
+    recency: str | None = Query(None),
+    good_skills: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     filter_skills = [skill.strip() for skill in (skills or "").split(",") if skill.strip()] or None
+    filter_good_skills = [skill.strip() for skill in (good_skills or "").split(",") if skill.strip()] or None
     return await build_candidate_response(
         jd_id,
         page,
@@ -351,6 +392,8 @@ async def source_candidates(
         visa_status,
         availability,
         relocation_preference,
+        recency,
+        filter_good_skills,
     )
 
 
@@ -377,4 +420,6 @@ async def source_candidates_legacy(
         payload.visa_status,
         payload.availability,
         payload.relocation_preference,
+        payload.recency,
+        payload.good_skills,
     )

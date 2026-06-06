@@ -53,8 +53,14 @@ def skill_matches(required: str, candidate_skills: list[str]) -> bool:
         candidate_tokens = normalize_skill_tokens(candidate_skill)
         if required_tokens & candidate_tokens:
             return True
-        if any(req in cand or cand in req for req in required_tokens for cand in candidate_tokens if len(req) >= 3 and len(cand) >= 3):
-            return True
+        for req in required_tokens:
+            for cand in candidate_tokens:
+                if len(req) >= 3 and len(cand) >= 3:
+                    # Prevent false positive match between Java and JavaScript
+                    if {req, cand} == {"java", "javascript"}:
+                        continue
+                    if req in cand or cand in req:
+                        return True
     return False
 
 

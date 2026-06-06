@@ -64,6 +64,7 @@ export default function JDTable() {
               <col className="jd-col-owner" />
               <col className="jd-col-skills" />
               <col className="jd-col-creator" />
+              <col style={{ width: "120px" }} />
               <col className="jd-col-pdf" />
               <col className="jd-col-created" />
               <col className="jd-col-actions" />
@@ -74,6 +75,7 @@ export default function JDTable() {
                 <th>Ownership</th>
                 <th>Skills</th>
                 <th>Created By</th>
+                <th>Zoho ID</th>
                 <th>PDF</th>
                 <th>Created</th>
                 <th />
@@ -123,6 +125,7 @@ function getJDSummary(jd: JD): string {
 
 function JDRow({ jd, onDelete }: { jd: JD; onDelete: () => void }) {
   const fileUrl = resolveFileUrl(jd.pdf_url);
+  const zohoId = jd.metadata?.zoho_recruit_id ? String(jd.metadata.zoho_recruit_id) : "-";
 
   return (
     <tr>
@@ -133,6 +136,7 @@ function JDRow({ jd, onDelete }: { jd: JD; onDelete: () => void }) {
       <td><span className="badge">{jd.ownership}</span></td>
       <td className="truncate-cell" title={jd.skills?.join(", ") || "-"}>{jd.skills?.slice(0, 3).join(", ") || "-"}</td>
       <td className="truncate-cell" title={jd.created_by_name || "-"}>{jd.created_by_name || "-"}</td>
+      <td className="truncate-cell" title={zohoId}>{zohoId}</td>
       <td>{fileUrl ? <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">Preview</a> : "-"}</td>
       <td>{formatDate(jd.created_at)}</td>
       <td><button className="danger-button" onClick={onDelete}>Delete</button></td>

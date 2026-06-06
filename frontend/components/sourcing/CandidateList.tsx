@@ -26,7 +26,7 @@ type CandidateFilters = {
   query: string;
   location: string;
   experience: string;
-  skill: string;
+  selectedSkills: string[];
   rawField: string;
   rawValue: string;
   fit: "all" | "strong" | "possible" | "weak";
@@ -36,9 +36,9 @@ type CandidateFilters = {
 
 type SourceFilters = {
   skills: string[];
+  goodSkills: string[];
   location: string;
-  seniority: string;
-  perPage: number;
+  recency: string;
 };
 
 type CandidateDecision = "accepted" | "rejected";
@@ -47,7 +47,7 @@ const defaultFilters: CandidateFilters = {
   query: "",
   location: "all",
   experience: "all",
-  skill: "all",
+  selectedSkills: [],
   rawField: "all",
   rawValue: "",
   fit: "all",
@@ -83,7 +83,7 @@ export default function CandidateList({
     returned: number;
   } | null>(null);
   const [filterRejections, setFilterRejections] = useState<Record<string, number>>({});
-  const [sourceFilters, setSourceFilters] = useState<SourceFilters>({ skills: [], location: "", seniority: "", perPage: 20 });
+  const [sourceFilters, setSourceFilters] = useState<SourceFilters>({ skills: [], goodSkills: [], location: "", recency: "all" });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [candidateDecisions, setCandidateDecisions] = useState<Record<string, CandidateDecision>>({});
   const [filters, setFilters] = useState<CandidateFilters>(defaultFilters);
@@ -117,9 +117,9 @@ export default function CandidateList({
         setExperienceRequirement(inferredExperience || inferredSeniority || null);
         setSourceFilters({
           skills: inferredMustHave.slice(0, 8),
+          goodSkills: inferredGoodToHave.slice(0, 8),
           location: inferredLocation,
-          seniority: inferredSeniority,
-          perPage: 20,
+          recency: "all",
         });
         setCandidates([]);
         setSourceStarted(false);
@@ -145,11 +145,12 @@ export default function CandidateList({
     setError(null);
     setSourceStarted(true);
     try {
-      const res = await jdApi.sourceCandidates(jdId, 1, sourceFilters.perPage, {
+      const res = await jdApi.sourceCandidates(jdId, 1, 100, {
         skills: allCandidates ? [] : sourceFilters.skills,
         location: allCandidates ? undefined : sourceFilters.location.trim() || undefined,
-        seniority: allCandidates ? undefined : sourceFilters.seniority.trim() || undefined,
         allCandidates,
+        recency: allCandidates ? undefined : sourceFilters.recency !== "all" ? sourceFilters.recency : undefined,
+        goodSkills: allCandidates ? [] : sourceFilters.goodSkills,
       });
       setCandidates(res.candidates);
       setCandidateDecisions({});
@@ -205,7 +206,9 @@ export default function CandidateList({
           Back to Job Descriptions
         </button>
         <div>
-          <p className="eyebrow">Candidate Matches</p>
+          <p className="eyebrow">
+            Candidate Matches {jd?.metadata?.zoho_recruit_id ? `(Zoho Recruit ID: ${jd.metadata.zoho_recruit_id})` : ""}
+          </p>
           <h2>{jdTitle}</h2>
         </div>
       </div>
@@ -236,7 +239,6 @@ export default function CandidateList({
           jd={jd}
           availableSkills={requiredSkills}
           goodToHaveSkills={goodToHaveSkills}
-          experienceRequirement={experienceRequirement}
           filters={sourceFilters}
           onChange={setSourceFilters}
           onStart={() => fetchCandidates(false)}
@@ -256,6 +258,7 @@ export default function CandidateList({
         <div className="source-search-summary">
           {searchStrategy && <strong>Search used: {searchStrategy}</strong>}
           {searchNotice && <p>{searchNotice}</p>}
+
           {pipelineCounts && (
             <p>
               Pipeline: {pipelineCounts.retrieved_from_zoho} retrieved, {pipelineCounts.deterministic_filtered} passed filters, {pipelineCounts.sent_to_scoring} scored, {pipelineCounts.sent_to_llm} sent to LLM, {pipelineCounts.returned} returned.
@@ -298,6 +301,8 @@ export default function CandidateList({
                 setFilters(defaultFilters);
                 setPage(1);
               }}
+              requiredSkills={requiredSkills}
+              goodToHaveSkills={goodToHaveSkills}
             />
             <div className="candidate-results-stack">
               {visibleCandidates.length > 0 ? (
@@ -342,7 +347,6 @@ function SourceFilterPanel({
   jd,
   availableSkills,
   goodToHaveSkills,
-  experienceRequirement,
   filters,
   onChange,
   onStart,
@@ -351,27 +355,18 @@ function SourceFilterPanel({
   jd: JD;
   availableSkills: string[];
   goodToHaveSkills: string[];
-  experienceRequirement: string | null;
   filters: SourceFilters;
   onChange: (filters: SourceFilters) => void;
   onStart: () => void;
   onStartAll: () => void;
 }) {
-  function toggleSkill(skill: string) {
-    const exists = filters.skills.includes(skill);
-    onChange({
-      ...filters,
-      skills: exists ? filters.skills.filter((item) => item !== skill) : [...filters.skills, skill],
-    });
-  }
-
   return (
     <div className="source-filter-panel">
       <div className="source-filter-copy">
         <p className="eyebrow">Pre-source filters</p>
         <h3>Choose Zoho filters before ranking</h3>
         <p className="muted">
-          Must-have skills are combined with AND. Good-to-have skills and JD/recruiter locations are combined with OR before candidates are sent to ranking.
+          Must-have skills are combined with OR. Good-to-have skills and JD/recruiter locations are combined with OR before candidates are sent to ranking.
         </p>
       </div>
 
@@ -380,29 +375,34 @@ function SourceFilterPanel({
           JD title
           <input value={jd.title} disabled />
         </label>
+        {Boolean(jd.metadata?.zoho_recruit_id) && (
+          <label>
+            Zoho Job ID
+            <input value={String(jd.metadata.zoho_recruit_id)} disabled />
+          </label>
+        )}
         <label>
           Location
-          <input
+          <select
             value={filters.location}
             onChange={(e) => onChange({ ...filters, location: e.target.value })}
-            placeholder="Example: Bangalore"
-          />
+            style={{ width: "100%", padding: "8px", borderRadius: "6px", border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          >
+            <option value="">All locations</option>
+            <option value="Bangalore">Bangalore</option>
+            <option value="Delhi">Delhi</option>
+            <option value="Mumbai">Mumbai</option>
+            <option value="Pune">Pune</option>
+            <option value="Hyderabad">Hyderabad</option>
+            <option value="Chennai">Chennai</option>
+          </select>
         </label>
         <label>
-          Experience / seniority
-          <input
-            value={filters.seniority}
-            onChange={(e) => onChange({ ...filters, seniority: e.target.value })}
-            placeholder={experienceRequirement || "Example: Senior"}
-          />
-        </label>
-        <label>
-          Candidates to fetch
-          <select value={filters.perPage} onChange={(e) => onChange({ ...filters, perPage: Number(e.target.value) })}>
-            <option value={10}>Top 10 from Zoho</option>
-            <option value={20}>Top 20 from Zoho</option>
-            <option value={50}>Top 50 from Zoho</option>
-            <option value={100}>Top 100 from Zoho</option>
+          Recency
+          <select value={filters.recency} onChange={(e) => onChange({ ...filters, recency: e.target.value })}>
+            <option value="all">Anytime</option>
+            <option value="3_months">Updated last 3 months</option>
+            <option value="6_months">Updated last 6 months</option>
           </select>
         </label>
       </div>
@@ -410,18 +410,13 @@ function SourceFilterPanel({
       <div className="source-skill-picker">
         <div>
           <strong>Must-have skills</strong>
-          <span className="muted small">Selected skills become AND conditions in Zoho search.</span>
+          <span className="muted small">These are required and will be included in the search criteria.</span>
         </div>
         <div className="requirement-chip-list">
           {availableSkills.map((skill) => (
-            <button
-              key={skill}
-              className={filters.skills.includes(skill) ? "source-skill-chip active" : "source-skill-chip"}
-              type="button"
-              onClick={() => toggleSkill(skill)}
-            >
+            <span key={skill} className="source-skill-chip active" style={{ cursor: "default" }}>
               {skill}
-            </button>
+            </span>
           ))}
         </div>
       </div>
@@ -430,18 +425,37 @@ function SourceFilterPanel({
         <div className="source-skill-picker">
           <div>
             <strong>Good-to-have skills</strong>
-            <span className="muted small">These are sent as OR conditions to narrow the Zoho result set.</span>
+            <span className="muted small">Click to select or deselect preferred skills to narrow the Zoho result set.</span>
           </div>
           <div className="requirement-chip-list">
-            {goodToHaveSkills.map((skill) => (
-              <span className="source-skill-chip optional" key={skill}>{skill}</span>
-            ))}
+            {goodToHaveSkills.map((skill) => {
+              const isActive = filters.goodSkills.includes(skill);
+              return (
+                <button
+                  key={skill}
+                  className={isActive ? "source-skill-chip active" : "source-skill-chip optional"}
+                  type="button"
+                  onClick={() => {
+                    const exists = filters.goodSkills.includes(skill);
+                    const newGoodSkills = exists
+                      ? filters.goodSkills.filter((item) => item !== skill)
+                      : [...filters.goodSkills, skill];
+                    onChange({
+                      ...filters,
+                      goodSkills: newGoodSkills,
+                    });
+                  }}
+                >
+                  {skill}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
       <div className="source-filter-actions">
-        <button className="primary-button" disabled={filters.skills.length === 0} onClick={onStart}>
+        <button className="primary-button" onClick={onStart}>
           Fetch filtered candidates
         </button>
         <button className="secondary-button" onClick={onStartAll}>
@@ -459,6 +473,8 @@ function CandidateFilterSidebar({
   filteredCount,
   onChange,
   onReset,
+  requiredSkills,
+  goodToHaveSkills,
 }: {
   filters: CandidateFilters;
   options: ReturnType<typeof buildFilterOptions>;
@@ -466,6 +482,8 @@ function CandidateFilterSidebar({
   filteredCount: number;
   onChange: <K extends keyof CandidateFilters>(key: K, value: CandidateFilters[K]) => void;
   onReset: () => void;
+  requiredSkills: string[];
+  goodToHaveSkills: string[];
 }) {
   return (
     <aside className="candidate-filter-sidebar">
@@ -498,13 +516,31 @@ function CandidateFilterSidebar({
         </select>
       </label>
 
-      <label>
-        Skill
-        <select value={filters.skill} onChange={(e) => onChange("skill", e.target.value)}>
-          <option value="all">All skills</option>
-          {options.skills.map((skill) => <option key={skill} value={skill}>{skill}</option>)}
-        </select>
-      </label>
+      <div className="skills-filter-group" style={{ marginBottom: "16px", marginTop: "12px" }}>
+        <span style={{ fontSize: "11px", fontWeight: "700", color: "var(--text-secondary)", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+          Filter by Skills
+        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "150px", overflowY: "auto", paddingRight: "4px" }}>
+          {uniqueSorted([...requiredSkills, ...goodToHaveSkills]).map((skill) => {
+            const isChecked = filters.selectedSkills?.includes(skill) ?? false;
+            return (
+              <label key={skill} className="filter-checkbox" style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", cursor: "pointer", fontWeight: "normal" }}>
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={(e) => {
+                    const newSkills = e.target.checked
+                      ? [...(filters.selectedSkills || []), skill]
+                      : (filters.selectedSkills || []).filter((s) => s !== skill);
+                    onChange("selectedSkills", newSkills);
+                  }}
+                />
+                {skill}
+              </label>
+            );
+          })}
+        </div>
+      </div>
 
       <label>
         Zoho field
@@ -568,7 +604,9 @@ function applyCandidateFilters(candidates: Candidate[], filters: CandidateFilter
   const filtered = candidates.filter((candidate) => {
     if (filters.location !== "all" && candidate.location !== filters.location) return false;
     if (filters.experience !== "all" && candidate.experience_level !== filters.experience) return false;
-    if (filters.skill !== "all" && !candidate.skills.includes(filters.skill)) return false;
+    if (filters.selectedSkills && filters.selectedSkills.length > 0) {
+      if (!filters.selectedSkills.every((s) => candidate.skills.includes(s))) return false;
+    }
     if (filters.rawField !== "all" && filters.rawValue.trim()) {
       const rawValue = String(candidate.raw_profile?.[filters.rawField] ?? "").toLowerCase();
       if (!rawValue.includes(filters.rawValue.trim().toLowerCase())) return false;

@@ -146,6 +146,10 @@ export default function GenerateTab({ onGenerated }: { onGenerated: (jd: Generat
     setError(null);
     try {
       const result = await jdApi.generate(input, inputType);
+      if (inputType === "zoho" && selectedZohoId) {
+        if (!result.metadata) result.metadata = {};
+        result.metadata.zoho_recruit_id = selectedZohoId;
+      }
       onGenerated(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generation failed");
@@ -564,7 +568,7 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
 }
 
 async function extractAudioFromMedia(file: File): Promise<File> {
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextClass) {
     throw new Error("Web Audio API is not supported in this browser.");
   }

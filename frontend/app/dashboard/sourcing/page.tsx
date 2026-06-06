@@ -47,8 +47,9 @@ export default function SourcingPage() {
       setSelectedJD({ id: parsedJD.id, title: parsedJD.title });
       setCandidateSource("landing");
       setViewMode("candidates");
-    } catch (err: any) {
-      setUploadError(err.message || "Failed to upload and parse job description.");
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : "Failed to upload and parse job description.";
+      setUploadError(errorMsg);
     } finally {
       setUploading(false);
     }
@@ -223,6 +224,7 @@ export default function SourcingPage() {
                     <th>JD Name</th>
                     <th>Visibility</th>
                     <th>Skills</th>
+                    <th>Zoho ID</th>
                     <th>PDF</th>
                     <th>Sourcing</th>
                   </tr>
@@ -230,6 +232,7 @@ export default function SourcingPage() {
                 <tbody>
                   {processedJDs.map((jd) => {
                     const fileUrl = resolveFileUrl(jd.pdf_url);
+                    const zohoId = jd.metadata?.zoho_recruit_id ? String(jd.metadata.zoho_recruit_id) : "-";
                     return (
                       <tr key={jd.id}>
                         <td><strong>{jd.title}</strong></td>
@@ -239,6 +242,7 @@ export default function SourcingPage() {
                           </span>
                         </td>
                         <td>{jd.skills?.join(", ") || "-"}</td>
+                        <td>{zohoId}</td>
                         <td>
                           {fileUrl ? (
                             <a href={fileUrl} target="_blank" rel="noreferrer" className="pdf-button">

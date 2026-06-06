@@ -28,10 +28,14 @@ def build_criteria(
 ) -> str:
     groups = []
 
-    # Must-have skills are strict pre-LLM gates. Every must-have skill must match.
+    # Must-have skills are strict pre-LLM gates.
     # The older `skills` argument is treated as must-have for backwards compatibility.
     clean_must_have = unique_terms([*(must_have_skills or []), *(skills or [])])
-    groups.extend(contains("Skill_Set", skill) for skill in clean_must_have[:8])
+    if clean_must_have:
+        skills_conditions = [contains("Skill_Set", skill) for skill in clean_must_have[:8]]
+        skills_group = or_group(*unique_nodes(skills_conditions))
+        if skills_group.children:
+            groups.append(skills_group)
 
     # Good-to-have skills are optional ranking signals by default. Only include them
     # in Zoho criteria when the caller explicitly wants at least one preferred skill.
@@ -58,29 +62,6 @@ def build_criteria(
         if location_group.children:
             groups.append(location_group)
 
-    if seniority:
-        seniority_conditions = []
-        for level in seniority_to_zoho_levels(seniority):
-            seniority_conditions.extend([
-                contains("Experience_Level", level),
-                contains("Current_Job_Title", level),
-            ])
-        seniority_group = or_group(*unique_nodes(seniority_conditions))
-        if seniority_group.children:
-            groups.append(seniority_group)
-
-    groups.extend([
-        greater_or_equal("Experience_in_Years", experience_min_years),
-        less_or_equal("Experience_in_Years", experience_max_years),
-        contains("Notice_Period", notice_period),
-        contains("Current_Employer", current_company),
-        contains("Highest_Qualification_Held", education),
-        contains("Employment_Type", employment_type),
-        contains("Visa_Status", visa_status),
-        contains("Candidate_Status", availability),
-        contains("Relocation_Preference", relocation_preference),
-    ])
-            
     return serialize_criteria(and_group(*groups))
 
 

@@ -71,7 +71,7 @@ export const jdApi = {
     req(`/api/v1/jds/${id}/publish`, { method: "POST", body: JSON.stringify(payload) }),
   preview: (payload: JDPublishRequest): Promise<{ pdf_url: string }> =>
     req("/api/v1/jds/preview", { method: "POST", body: JSON.stringify(payload) }),
-  sourceCandidates: (jdId: number, page = 1, perPage = 20, filters?: {
+  sourceCandidates: (jdId: number, page = 1, perPage = 100, filters?: {
     skills?: string[];
     location?: string;
     seniority?: string;
@@ -83,6 +83,8 @@ export const jdApi = {
     visaStatus?: string;
     availability?: string;
     relocationPreference?: string;
+    recency?: string;
+    goodSkills?: string[];
   }): Promise<{
     jd_id: number;
     jd_title: string;
@@ -102,6 +104,7 @@ export const jdApi = {
     };
     filter_rejections?: Record<string, number>;
     experience_requirement: string | null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     candidates: any[];
     total: number;
   }> => {
@@ -121,6 +124,8 @@ export const jdApi = {
     if (filters?.visaStatus) params.set("visa_status", filters.visaStatus);
     if (filters?.availability) params.set("availability", filters.availability);
     if (filters?.relocationPreference) params.set("relocation_preference", filters.relocationPreference);
+    if (filters?.recency) params.set("recency", filters.recency);
+    if (filters?.goodSkills?.length) params.set("good_skills", filters.goodSkills.join(","));
     return req(`/api/v1/sourcing/candidates?${params.toString()}`);
   },
   delete: (id: number): Promise<void> => req(`/api/v1/jds/${id}`, { method: "DELETE" }),
