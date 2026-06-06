@@ -1,6 +1,8 @@
 import json
+import logging
 from pathlib import Path
 import re
+import tempfile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 import httpx
@@ -27,10 +29,12 @@ from app.schemas.jd import (
 )
 from app.schemas.template_dsl import TemplateDefinition
 from app.services.pdf_service import write_simple_pdf
+from app.services.pdf_image_service import convert_pdf_to_png_images
 from app.services.template_dsl_service import generate_template_definition
 
 
 router = APIRouter(prefix="/api/v1/jds", tags=["JDs"])
+logger = logging.getLogger(__name__)
 
 
 class TemplateUpdateRequest(BaseModel):
@@ -522,24 +526,7 @@ async def upload_jd_template(
     stored_path = template_dir / stored_name
     stored_path.write_bytes(file_bytes)
 
-    extracted_text = ""
-    try:
-        from io import BytesIO
-        from pypdf import PdfReader
-
-        reader = PdfReader(BytesIO(file_bytes))
-        page_summaries = []
-        for index, page in enumerate(reader.pages, start=1):
-            text = page.extract_text() or ""
-            box = page.mediabox
-            page_summaries.append(
-                f"Page {index}: width={float(box.width):.1f}, height={float(box.height):.1f}\n{text}"
-            )
-        extracted_text = "\n\n".join(page_summaries).strip()
-    except Exception:
-        extracted_text = ""
-
-    prompt = template_prompt_for_upload(filename, extracted_text)
+    prompt = template_prompt_for_upload(filename, "")
     template = JDTemplate(
         name=name.strip(),
         description=description,
@@ -550,14 +537,59 @@ async def upload_jd_template(
     db.add(template)
     db.flush()
 
-    llm = get_llm_provider()
-    definition = await generate_template_definition(
-        llm=llm,
-        filename=filename,
-        extracted_context=extracted_text,
-        template_name=template.name,
-        description=description,
-    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="jd-template-pages-") as temp_dir:
+            page_images = convert_pdf_to_png_images(file_bytes, Path(temp_dir))
+            image_attachments = [
+                {"filename": image_name, "bytes": len(image_bytes), "mime_type": mime_type}
+                for image_name, image_bytes, mime_type in page_images
+            ]
+            logger.info(
+                "Using vision-based template generation: filename=%s uploaded_pdf_page_count=%s image_count=%s",
+                filename,
+                len(page_images),
+                len(page_images),
+            )
+            logger.warning(
+                "TEMPLATE_UPLOAD_PIPELINE=vision provider=%s model=%s filename=%s image_attachments=%s",
+                settings.LLM_PROVIDER,
+                settings.LLM_VISION_MODEL or settings.LLM_MODEL,
+                filename,
+                image_attachments,
+            )
+            if not page_images:
+                raise ValueError("Template PDF rendered zero pages")
+
+            llm = get_llm_provider()
+            definition = await generate_template_definition(
+                llm=llm,
+                filename=filename,
+                page_images=page_images,
+                template_name=template.name,
+                description=description,
+            )
+            logger.info(
+                "Template blueprint validation results: template=%s mapped_fields=%s confidence=%s",
+                template.name,
+                (definition.metadata.get("field_coverage") or {}).get("mapped_fields"),
+                definition.metadata.get("blueprint_confidence"),
+            )
+            logger.warning(
+                "TEMPLATE_BLUEPRINT_STORED name=%s section_count=%s section_order=%s field_coverage=%s",
+                template.name,
+                len(definition.sections),
+                definition.section_order,
+                definition.metadata.get("field_coverage"),
+            )
+    except Exception as exc:
+        db.rollback()
+        try:
+            if stored_path.exists():
+                stored_path.unlink()
+        except Exception:
+            pass
+        raise HTTPException(status_code=502, detail=f"Vision template generation failed: {exc}") from exc
+
     template.definition_json = definition.model_dump(mode="json")
     template.version = definition.schema_version
 
@@ -659,7 +691,15 @@ def enforce_explicit_experience_and_location(source_text: str, jd: dict) -> None
     if not isinstance(metadata, dict):
         return
 
-    if not has_explicit_experience(source_text):
+    explicit_experience = extract_explicit_experience(source_text)
+    if explicit_experience:
+        metadata["experience_years"] = explicit_experience
+        min_years, max_years = extract_experience_range(explicit_experience)
+        if min_years is not None:
+            metadata["experience_min_years"] = min_years
+        if max_years is not None:
+            metadata["experience_max_years"] = max_years
+    else:
         for key in ("experience_years", "experience", "experience_min_years", "experience_max_years"):
             metadata.pop(key, None)
 
@@ -669,12 +709,41 @@ def enforce_explicit_experience_and_location(source_text: str, jd: dict) -> None
 
 
 def has_explicit_experience(text: str) -> bool:
+    return extract_explicit_experience(text) is not None
+
+
+def extract_explicit_experience(text: str) -> str | None:
     lowered = text.lower()
-    return bool(
-        re.search(r"\bwork\s+experience\s*:\s*\d+(?:\.\d+)?\s*(?:to|-)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?)\b", lowered)
-        or re.search(r"\b\d+(?:\.\d+)?\s*(?:to|-)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?)\b", lowered)
-        or re.search(r"\b\d+(?:\.\d+)?\+?\s*(?:years?|yrs?)\b", lowered)
+    patterns = (
+        r"\bwork\s+experience\s*:\s*(\d+(?:\.\d+)?\s*(?:to|-)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?))\b",
+        r"\bexperience\s*:\s*(\d+(?:\.\d+)?\s*(?:to|-)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?))\b",
+        r"\b(\d+(?:\.\d+)?\s*(?:to|-)\s*\d+(?:\.\d+)?\s*(?:years?|yrs?))\b",
+        r"\bwork\s+experience\s*:\s*(\d+(?:\.\d+)?\+?\s*(?:years?|yrs?))\b",
+        r"\bexperience\s*:\s*(\d+(?:\.\d+)?\+?\s*(?:years?|yrs?))\b",
+        r"\b(\d+(?:\.\d+)?\+?\s*(?:years?|yrs?))\b",
     )
+    for pattern in patterns:
+        match = re.search(pattern, lowered, flags=re.IGNORECASE)
+        if match:
+            return normalize_experience_label(match.group(1))
+    return None
+
+
+def normalize_experience_label(value: str) -> str:
+    text = " ".join(value.replace("-", " to ").split())
+    text = re.sub(r"\byrs?\b", "Years", text, flags=re.IGNORECASE)
+    text = re.sub(r"\byears?\b", "Years", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bto\b", "to", text, flags=re.IGNORECASE)
+    return text
+
+
+def extract_experience_range(value: str) -> tuple[int | None, int | None]:
+    numbers = [int(float(item)) for item in re.findall(r"\d+(?:\.\d+)?", value)]
+    if len(numbers) >= 2:
+        return numbers[0], numbers[1]
+    if len(numbers) == 1:
+        return numbers[0], numbers[0] + 5
+    return None, None
 
 
 def has_explicit_location(text: str) -> bool:

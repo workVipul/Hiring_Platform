@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     # LLM provider configuration
     LLM_PROVIDER: str = "groq"
     LLM_MODEL: str = "llama-3.3-70b-versatile"
+    LLM_VISION_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     GROQ_API_KEY: str = ""
     GROK_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""

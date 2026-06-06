@@ -13,6 +13,7 @@ email-validator
 python-multipart
 reportlab
 pypdf
+PyMuPDF
 
 # Optional: use Alembic for migrations in production
 # alembic

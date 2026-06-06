@@ -42,6 +42,10 @@ class BoxStyle(BaseModel):
     border_width: float = Field(default=0, ge=0, le=8)
     radius: float = Field(default=0, ge=0, le=30)
     padding: float = Field(default=0, ge=0, le=72)
+    padding_top: float | None = Field(default=None, ge=0, le=72)
+    padding_right: float | None = Field(default=None, ge=0, le=72)
+    padding_bottom: float | None = Field(default=None, ge=0, le=72)
+    padding_left: float | None = Field(default=None, ge=0, le=72)
 
 
 class TextStyle(BaseModel):
@@ -67,6 +71,18 @@ class TableStyleDef(BaseModel):
     border_color: str = "#D4D7E0"
     text_color: str = "#222222"
     cell_padding: float = Field(default=6, ge=0, le=24)
+    zebra_rows: bool = False
+    column_widths: list[float] = Field(default_factory=list)
+
+
+class LayoutRegion(BaseModel):
+    name: str
+    type: Literal["header", "footer", "main", "sidebar", "hero", "content", "metadata", "branding", "background"] = "content"
+    position: Literal["top", "right", "bottom", "left", "center", "full_page", "inline"] = "inline"
+    width_ratio: float | None = Field(default=None, ge=0.05, le=1)
+    height: float | None = Field(default=None, ge=0, le=400)
+    background_color: str | None = None
+    blocks: list["TemplateBlock"] = Field(default_factory=list)
 
 
 class TemplateBlock(BaseModel):
@@ -77,6 +93,8 @@ class TemplateBlock(BaseModel):
         "bullet_list",
         "table",
         "columns",
+        "container",
+        "sidebar",
         "card",
         "banner",
         "divider",
@@ -85,6 +103,8 @@ class TemplateBlock(BaseModel):
         "page_number",
     ]
     field: str | None = None
+    name: str | None = None
+    role: str | None = None
     label: str | None = None
     text: str | None = None
     fields: list[str] = Field(default_factory=list)
@@ -95,6 +115,8 @@ class TemplateBlock(BaseModel):
     box: BoxStyle | None = None
     divider: DividerStyle | None = None
     table: TableStyleDef | None = None
+    background_color: str | None = None
+    style_ref: str | None = None
     height: float = Field(default=8, ge=0, le=144)
 
     @field_validator("field")
@@ -127,7 +149,11 @@ class TemplateDefinition(BaseModel):
     margins: dict[str, float] = Field(default_factory=lambda: {"top": 54, "right": 54, "bottom": 54, "left": 54})
     colors: dict[str, str] = Field(default_factory=dict)
     typography: dict[str, TextStyle] = Field(default_factory=dict)
+    style_definitions: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    section_styles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     spacing: dict[str, float] = Field(default_factory=dict)
+    layout_regions: list[LayoutRegion] = Field(default_factory=list)
+    background: dict[str, Any] = Field(default_factory=dict)
     header: HeaderFooterDef | None = None
     footer: HeaderFooterDef | None = None
     sections: list[TemplateBlock] = Field(default_factory=list)

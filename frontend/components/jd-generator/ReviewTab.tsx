@@ -292,7 +292,13 @@ export default function ReviewTab({
 
 function getExperience(jd: GeneratedJD): string {
   const metadata = jd.metadata ?? {};
-  const value = metadata.experience_years ?? metadata.experience ?? jd["experience"];
+  const value = metadata.experience_years
+    ?? metadata.experience
+    ?? metadata.work_experience
+    ?? metadata.Work_Experience
+    ?? jd["experience"]
+    ?? jd["work_experience"]
+    ?? jd["Work_Experience"];
   return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }
 

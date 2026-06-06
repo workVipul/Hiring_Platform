@@ -278,7 +278,7 @@ def render_block(
         label = block.label or (block.field or "").replace("_", " ").title()
         diagnostics.rendered(path, block.type, count_sections)
         return [Paragraph(label.upper() if should_uppercase(block, styles["heading"]) else label, styles["heading"]), *render_value(block.field or "", None, value, styles["body"], styles["bullet"])]
-    if block.type in {"card", "banner"}:
+    if block.type in {"card", "banner", "container", "sidebar"}:
         inner = render_blocks(block.blocks or [TemplateBlock(type="field", field=block.field, label=block.label)], field_data, styles, width, diagnostics, f"{path}.inner", count_sections=False)
         if not inner:
             diagnostics.skipped(path, block.type, "container inner blocks rendered empty", count_sections)
@@ -364,13 +364,14 @@ def render_columns(block: TemplateBlock, field_data: dict[str, Any], styles: dic
 def wrap_in_table(flowables: list[Any], width: float, block: TemplateBlock) -> list[Any]:
     box = block.box
     table = Table([[flowables]], colWidths=[width])
+    default_padding = box.padding if box else 10
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), parse_color(box.background_color if box and box.background_color else "#F7F8FA")),
+        ("BACKGROUND", (0, 0), (-1, -1), parse_color(block.background_color or (box.background_color if box and box.background_color else "#F7F8FA"))),
         ("BOX", (0, 0), (-1, -1), box.border_width if box else 0, parse_color(box.border_color if box and box.border_color else "#D4D7E0")),
-        ("LEFTPADDING", (0, 0), (-1, -1), box.padding if box else 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), box.padding if box else 10),
-        ("TOPPADDING", (0, 0), (-1, -1), box.padding if box else 10),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), box.padding if box else 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), box.padding_left if box and box.padding_left is not None else default_padding),
+        ("RIGHTPADDING", (0, 0), (-1, -1), box.padding_right if box and box.padding_right is not None else default_padding),
+        ("TOPPADDING", (0, 0), (-1, -1), box.padding_top if box and box.padding_top is not None else default_padding),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), box.padding_bottom if box and box.padding_bottom is not None else default_padding),
     ]))
     return [table, Spacer(1, 8)]
 

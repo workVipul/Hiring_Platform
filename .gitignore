@@ -1,15 +1,34 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
 venv/
+.venv/
 
 # Node
 node_modules/
 .next/
 .next-webpack/
+out/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
 # Environment
 .env
+.env.*
+!.env.example
 
 # Uploads
 uploads/
