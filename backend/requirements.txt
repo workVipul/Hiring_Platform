@@ -13,6 +13,8 @@ httpx
 email-validator
 python-multipart
 reportlab
+jinja2
+weasyprint
 pypdf
 PyMuPDF
 

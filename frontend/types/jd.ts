@@ -64,6 +64,9 @@ export interface JDTemplate {
   description?: string | null;
   file_url?: string | null;
   definition_json?: Record<string, unknown> | null;
+  template_html?: string | null;
+  template_css?: string | null;
+  mapped_fields?: string[];
   version?: number;
   prompt?: string | null;
   is_custom: boolean;

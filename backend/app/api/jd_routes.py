@@ -30,6 +30,7 @@ from app.schemas.jd import (
 from app.schemas.template_dsl import TemplateDefinition
 from app.services.pdf_service import write_simple_pdf
 from app.services.pdf_image_service import convert_pdf_to_png_images
+from app.services.html_template_service import generate_html_template, normalize_mapped_fields, sanitize_template_css, sanitize_template_html, validate_html_template
 from app.services.template_dsl_service import generate_template_definition
 
 
@@ -43,6 +44,9 @@ class TemplateUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     definition_json: dict | None = None
+    template_html: str | None = None
+    template_css: str | None = None
+    mapped_fields: list[str] | None = None
 
 DEFAULT_TEMPLATE_PROMPT = """Use the Wissen Technology corporate classic JD PDF layout.
 Keep the official Wissen logo, use the platform color palette (#0A2246, #1A2D58, #445377, #57CFE4, #FF540A), preserve clean section hierarchy, and render the standardized JD sections with recruiter-friendly spacing."""
@@ -152,6 +156,9 @@ def serialize_template(template: JDTemplate) -> dict:
         "description": template.description,
         "file_url": template.file_url,
         "definition_json": template.definition_json,
+        "template_html": template.template_html,
+        "template_css": template.template_css,
+        "mapped_fields": template.mapped_fields if isinstance(template.mapped_fields, list) else [],
         "version": template.version,
         "prompt": template.prompt,
         "is_custom": True,
@@ -498,6 +505,9 @@ def list_jd_templates(db: Session = Depends(get_db), current_user: User = Depend
                 "description": "Standard Wissen presentation",
                 "file_url": None,
                 "definition_json": None,
+                "template_html": None,
+                "template_css": None,
+                "mapped_fields": [],
                 "version": 1,
                 "prompt": DEFAULT_TEMPLATE_PROMPT,
                 "is_custom": False,
@@ -569,26 +579,42 @@ async def upload_jd_template(
                 raise ValueError("Template PDF rendered zero pages")
 
             llm = get_llm_provider()
-            definition = await generate_template_definition(
-                llm=llm,
-                filename=filename,
-                page_images=page_images,
-                template_name=template.name,
-                description=description,
-            )
-            logger.info(
-                "Template blueprint validation results: template=%s mapped_fields=%s confidence=%s",
-                template.name,
-                (definition.metadata.get("field_coverage") or {}).get("mapped_fields"),
-                definition.metadata.get("blueprint_confidence"),
-            )
-            logger.warning(
-                "TEMPLATE_BLUEPRINT_STORED name=%s section_count=%s section_order=%s field_coverage=%s",
-                template.name,
-                len(definition.sections),
-                definition.section_order,
-                definition.metadata.get("field_coverage"),
-            )
+            definition = None
+            html_template = None
+            if settings.ENABLE_LEGACY_DSL:
+                definition = await generate_template_definition(
+                    llm=llm,
+                    filename=filename,
+                    page_images=page_images,
+                    template_name=template.name,
+                    description=description,
+                )
+                logger.info(
+                    "Template blueprint validation results: template=%s mapped_fields=%s confidence=%s",
+                    template.name,
+                    (definition.metadata.get("field_coverage") or {}).get("mapped_fields"),
+                    definition.metadata.get("blueprint_confidence"),
+                )
+                logger.warning(
+                    "TEMPLATE_BLUEPRINT_STORED name=%s section_count=%s section_order=%s field_coverage=%s",
+                    template.name,
+                    len(definition.sections),
+                    definition.section_order,
+                    definition.metadata.get("field_coverage"),
+                )
+            else:
+                html_template = await generate_html_template(
+                    llm=llm,
+                    filename=filename,
+                    page_images=page_images,
+                )
+                logger.warning(
+                    "HTML_TEMPLATE_STORED name=%s html_length=%s css_length=%s mapped_fields=%s",
+                    template.name,
+                    len(html_template["html"]),
+                    len(html_template["css"]),
+                    html_template["mapped_fields"],
+                )
     except Exception as exc:
         db.rollback()
         try:
@@ -598,8 +624,15 @@ async def upload_jd_template(
             pass
         raise HTTPException(status_code=502, detail=f"Vision template generation failed: {exc}") from exc
 
-    template.definition_json = definition.model_dump(mode="json")
-    template.version = definition.schema_version
+    if settings.ENABLE_LEGACY_DSL:
+        template.definition_json = definition.model_dump(mode="json") if definition else None
+        template.version = definition.schema_version if definition else 1
+    else:
+        template.template_html = html_template["html"] if html_template else None
+        template.template_css = html_template["css"] if html_template else None
+        template.mapped_fields = html_template["mapped_fields"] if html_template else []
+        template.definition_json = None
+        template.version = 1
 
     db.commit()
     db.refresh(template)
@@ -633,6 +666,18 @@ def update_jd_template(template_id: str, payload: TemplateUpdateRequest, db: Ses
         definition = TemplateDefinition.model_validate(payload.definition_json)
         template.definition_json = definition.model_dump(mode="json")
         template.version = template.version + 1
+    if payload.template_html is not None or payload.template_css is not None or payload.mapped_fields is not None:
+        template_html = sanitize_template_html(payload.template_html if payload.template_html is not None else template.template_html or "")
+        template_css = sanitize_template_css(payload.template_css if payload.template_css is not None else template.template_css or "")
+        mapped_fields = normalize_mapped_fields(
+            payload.mapped_fields if payload.mapped_fields is not None else template.mapped_fields,
+            template_html,
+        )
+        validate_html_template(template_html, template_css, mapped_fields)
+        template.template_html = template_html
+        template.template_css = template_css
+        template.mapped_fields = mapped_fields
+        template.version = template.version + 1
     db.commit()
     db.refresh(template)
     return serialize_template(template)
@@ -642,8 +687,12 @@ def update_jd_template(template_id: str, payload: TemplateUpdateRequest, db: Ses
 def preview_jd_template(template_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     numeric_template_id = parse_template_id(template_id)
     template = db.query(JDTemplate).filter(JDTemplate.id == numeric_template_id, JDTemplate.is_active == True).first()  # noqa: E712
-    if not template or not isinstance(template.definition_json, dict):
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if settings.ENABLE_LEGACY_DSL and not isinstance(template.definition_json, dict):
         raise HTTPException(status_code=404, detail="Template definition not found")
+    if not settings.ENABLE_LEGACY_DSL and (not template.template_html or not template.template_css):
+        raise HTTPException(status_code=404, detail="Template HTML/CSS not found")
 
     sample = sample_jd_for_template_preview()
     sample["metadata"] = {**sample.get("metadata", {}), "template": f"custom-{template.id}"}

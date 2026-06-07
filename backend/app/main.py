@@ -77,6 +77,15 @@ def ensure_jd_template_module_column() -> None:
             if "version" not in columns:
                 connection.execute(text("ALTER TABLE jd_templates ADD COLUMN version INTEGER DEFAULT 1 NOT NULL"))
                 logger.info("Added jd_templates.version column.")
+            if "template_html" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN template_html TEXT"))
+                logger.info("Added jd_templates.template_html column.")
+            if "template_css" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN template_css TEXT"))
+                logger.info("Added jd_templates.template_css column.")
+            if "mapped_fields" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN mapped_fields JSON"))
+                logger.info("Added jd_templates.mapped_fields column.")
     except Exception as exc:
         logger.warning("Could not ensure jd_templates custom template columns: %s", exc)
 
