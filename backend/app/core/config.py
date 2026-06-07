@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     GROK_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
 
     # Zoho portal candidates search demo configuration
     ZOHO_BASE_URL: str = "https://zohorecruit.thankfulrock-f57331b9.centralindia.azurecontainerapps.io/recruit/v2/Candidates"
@@ -36,6 +38,12 @@ class Settings(BaseSettings):
     SOURCING_SCORING_LIMIT: int = 500
     SOURCING_LLM_RANK_LIMIT: int = 50
     SOURCING_RESULT_LIMIT: int = 50
+
+    @model_validator(mode="after")
+    def validate_provider_configuration(self):
+        if self.LLM_PROVIDER.lower() == "gemini" and not self.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
+        return self
 
     class Config:
         env_file = ".env"

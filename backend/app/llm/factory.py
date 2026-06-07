@@ -23,4 +23,9 @@ def get_llm_provider() -> LLMProvider:
 
         return AnthropicProvider()
 
-    raise ValueError(f"Unknown LLM_PROVIDER: {provider}. Valid: groq, grok, anthropic")
+    if provider == "gemini":
+        from app.services.gemini_provider import GeminiProvider
+
+        return GeminiProvider()
+
+    raise ValueError(f"Unknown LLM_PROVIDER: {provider}. Valid: groq, grok, anthropic, gemini")

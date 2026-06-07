@@ -9,7 +9,7 @@ from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from app.schemas.template_dsl import TemplateBlock, TemplateDefinition
+from app.schemas.template_dsl import TemplateBlock, TemplateDefinition, TextStyle
 from app.services.pdf_common import (
     ABOUT_WISSEN,
     WISSEN_SITES,
@@ -158,13 +158,20 @@ def build_field_data(title: str, data: dict, metadata: dict) -> dict[str, Any]:
 def build_styles(definition: TemplateDefinition) -> dict[str, ParagraphStyle]:
     sample = getSampleStyleSheet()
     typography = definition.typography
-    return {
+    styles = {
         "title": style_from_dsl("DynamicTitle", typography.get("title"), sample["Normal"], font_name="Helvetica-Bold", font_size=18, color="#0A2246"),
         "heading": style_from_dsl("DynamicHeading", typography.get("heading"), sample["Normal"], font_name="Helvetica-Bold", font_size=11, color="#0A2246"),
         "body": style_from_dsl("DynamicBody", typography.get("body"), sample["Normal"], font_name="Helvetica", font_size=9, color="#222222"),
         "bullet": style_from_dsl("DynamicBullet", typography.get("bullet"), sample["Normal"], font_name="Helvetica", font_size=9, color="#222222", left_indent=14, first_line_indent=-9),
         "small": style_from_dsl("DynamicSmall", typography.get("small"), sample["Normal"], font_name="Helvetica", font_size=8, color="#445377"),
     }
+    for style_name, dsl_style in definition.style_definitions.items():
+        text_style = text_style_from_definition(style_name, dsl_style)
+        if text_style:
+            styles[style_name] = style_from_dsl(f"Dynamic_{style_name}", text_style, styles["body"])
+    for style in styles.values():
+        setattr(style, "_dynamic_style_registry", styles)
+    return styles
 
 
 def style_from_dsl(name: str, dsl_style: Any, parent: ParagraphStyle, **defaults) -> ParagraphStyle:
@@ -173,7 +180,7 @@ def style_from_dsl(name: str, dsl_style: Any, parent: ParagraphStyle, **defaults
     leading = getattr(dsl_style, "leading", None) or font_size + 3
     alignment = ALIGNMENTS.get(getattr(dsl_style, "alignment", "LEFT"), TA_LEFT)
     text_color = parse_color(getattr(dsl_style, "color", defaults.get("color", "#222222")))
-    return ParagraphStyle(
+    style = ParagraphStyle(
         name,
         parent=parent,
         fontName=font_name,
@@ -186,6 +193,31 @@ def style_from_dsl(name: str, dsl_style: Any, parent: ParagraphStyle, **defaults
         leftIndent=defaults.get("left_indent", 0),
         firstLineIndent=defaults.get("first_line_indent", 0),
     )
+    setattr(style, "_dynamic_uppercase", bool(getattr(dsl_style, "uppercase", False)))
+    return style
+
+
+def text_style_from_definition(style_name: str, value: Any) -> TextStyle | None:
+    if isinstance(value, TextStyle):
+        return value
+    if isinstance(value, dict):
+        text_keys = {
+            "font_name",
+            "font_size",
+            "leading",
+            "color",
+            "alignment",
+            "space_before",
+            "space_after",
+            "uppercase",
+        }
+        text_values = {key: val for key, val in value.items() if key in text_keys}
+        if text_values:
+            try:
+                return TextStyle.model_validate(text_values)
+            except Exception as exc:
+                logger.warning("STYLE_REFERENCE_INVALID style_name=%s error=%s", style_name, exc)
+    return None
 
 
 def blocks_from_section_order(section_order: list[str]) -> list[TemplateBlock]:
@@ -263,6 +295,13 @@ def render_block(
     if block.type == "field":
         value = field_data.get(block.field or "")
         diagnostics.log_field(block.field or "", value, path)
+        logger.warning(
+            "RENDER_FIELD path=%s field=%s has_value=%s content_length=%s",
+            path,
+            block.field or "<none>",
+            bool(value),
+            content_length(value),
+        )
         rendered = render_value(block.field or "", block.label, value, block_style(block, styles["body"]), styles["bullet"])
         if rendered:
             diagnostics.rendered(path, block.type, count_sections)
@@ -270,16 +309,43 @@ def render_block(
             diagnostics.skipped(path, block.type, f"field {block.field or '<none>'} resolved empty", count_sections)
         return rendered
     if block.type == "section":
-        value = field_data.get(block.field or "")
-        diagnostics.log_field(block.field or "", value, path)
+        logger.warning(
+            "RENDER_SECTION path=%s name=%s field=%s nested_blocks=%s",
+            path,
+            block.name or "<none>",
+            block.field or "<none>",
+            len(block.blocks),
+        )
+        if block.blocks:
+            inner = render_blocks(block.blocks, field_data, styles, width, diagnostics, f"{path}.blocks", count_sections=False)
+            if not inner:
+                diagnostics.skipped(path, block.type, "section nested blocks rendered empty", count_sections)
+                return []
+            diagnostics.rendered(path, block.type, count_sections)
+            return inner
+        if not block.field:
+            diagnostics.skipped(path, block.type, "section has no field and no nested blocks", count_sections)
+            return []
+        value = field_data.get(block.field)
+        diagnostics.log_field(block.field, value, path)
         if not value:
             diagnostics.skipped(path, block.type, f"field {block.field or '<none>'} resolved empty", count_sections)
             return []
         label = block.label or (block.field or "").replace("_", " ").title()
+        heading_style = block_style(block, styles["heading"])
         diagnostics.rendered(path, block.type, count_sections)
-        return [Paragraph(label.upper() if should_uppercase(block, styles["heading"]) else label, styles["heading"]), *render_value(block.field or "", None, value, styles["body"], styles["bullet"])]
+        return [Paragraph(label.upper() if should_uppercase(block, styles["heading"]) else label, heading_style), *render_value(block.field or "", None, value, styles["body"], styles["bullet"])]
     if block.type in {"card", "banner", "container", "sidebar"}:
-        inner = render_blocks(block.blocks or [TemplateBlock(type="field", field=block.field, label=block.label)], field_data, styles, width, diagnostics, f"{path}.inner", count_sections=False)
+        logger.warning(
+            "RENDER_CONTAINER path=%s type=%s name=%s field=%s nested_blocks=%s",
+            path,
+            block.type,
+            block.name or "<none>",
+            block.field or "<none>",
+            len(block.blocks),
+        )
+        fallback_blocks = [TemplateBlock(type="field", field=block.field, label=block.label)] if block.field else []
+        inner = render_blocks(block.blocks or fallback_blocks, field_data, styles, width, diagnostics, f"{path}.inner", count_sections=False)
         if not inner:
             diagnostics.skipped(path, block.type, "container inner blocks rendered empty", count_sections)
             return []
@@ -349,6 +415,13 @@ def render_table(block: TemplateBlock, field_data: dict[str, Any], styles: dict[
 
 def render_columns(block: TemplateBlock, field_data: dict[str, Any], styles: dict[str, ParagraphStyle], width: float, diagnostics: RenderDiagnostics, path: str) -> list[Any]:
     columns = block.columns or []
+    logger.warning(
+        "RENDER_COLUMNS path=%s name=%s column_count=%s widths=%s",
+        path,
+        block.name or "<none>",
+        len(columns),
+        block.widths,
+    )
     if not columns:
         return []
     col_widths = block.widths if len(block.widths) == len(columns) else [1 / len(columns)] * len(columns)
@@ -386,11 +459,27 @@ def line_table(width: float, block: TemplateBlock) -> Table:
 def block_style(block: TemplateBlock, fallback: ParagraphStyle) -> ParagraphStyle:
     if not block.style:
         return fallback
+    if isinstance(block.style, str):
+        resolved = fallback
+        style_name = block.style
+        styles = getattr(fallback, "_dynamic_style_registry", None)
+        if isinstance(styles, dict) and style_name in styles:
+            resolved = styles[style_name]
+            logger.warning("STYLE_REFERENCE_RESOLVED style_name=%s", style_name)
+        else:
+            logger.warning("STYLE_REFERENCE_UNRESOLVED style_name=%s", style_name)
+        return resolved
     return style_from_dsl(f"{fallback.name}_{id(block)}", block.style, fallback)
 
 
 def should_uppercase(block: TemplateBlock, style: ParagraphStyle) -> bool:
-    return bool(block.style and block.style.uppercase)
+    if not block.style:
+        return False
+    if not isinstance(block.style, str):
+        return bool(block.style.uppercase)
+    styles = getattr(style, "_dynamic_style_registry", None)
+    resolved = styles.get(block.style) if isinstance(styles, dict) else None
+    return bool(getattr(resolved, "_dynamic_uppercase", False))
 
 
 def draw_footer(canvas, doc, definition: TemplateDefinition, field_data: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:

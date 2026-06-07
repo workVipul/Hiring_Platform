@@ -36,6 +36,8 @@ from app.services.template_dsl_service import generate_template_definition
 router = APIRouter(prefix="/api/v1/jds", tags=["JDs"])
 logger = logging.getLogger(__name__)
 
+JD_GENERATION_MAX_TOKENS = 12000
+
 
 class TemplateUpdateRequest(BaseModel):
     name: str | None = None
@@ -228,6 +230,12 @@ def create_jd(payload: JDCreate, db: Session = Depends(get_db), current_user: Us
 async def generate_jd(payload: JDGenerateRequest):
     try:
         llm = get_llm_provider()
+        logger.warning(
+            "JD_GENERATION_LLM_PROVIDER provider=%s model=%s max_output_tokens=%s endpoint=/api/v1/jds/generate",
+            settings.LLM_PROVIDER,
+            settings.LLM_MODEL,
+            JD_GENERATION_MAX_TOKENS,
+        )
         result = await llm.complete_json(
             system=GENERATE_SYSTEM,
             user=(
@@ -236,7 +244,7 @@ async def generate_jd(payload: JDGenerateRequest):
                 "Apply the context precisely, keep unsupported details out, and return the complete JSON structure only.\n\n"
                 f"Hiring context:\n{payload.raw_input}"
             ),
-            max_tokens=2400,
+            max_tokens=JD_GENERATION_MAX_TOKENS,
         )
         normalized = normalize_generated_jd(result)
         enforce_explicit_experience_and_location(payload.raw_input, normalized)
@@ -295,7 +303,7 @@ async def refine_jd(jd_id: int, payload: JDRefineRequest, db: Session = Depends(
         result = await llm.complete_json(
             system=REFINE_SYSTEM,
             user=f"Instruction: {payload.instruction}\n\nCurrent JD:\n{current_content}",
-            max_tokens=2400,
+            max_tokens=JD_GENERATION_MAX_TOKENS,
         )
         return normalize_generated_jd(result)
     except Exception as exc:
@@ -439,7 +447,7 @@ async def upload_and_parse_jd(
                 "extract structured metadata, normalize technologies, and avoid adding unsupported facts.\n\n"
                 f"Hiring context extracted from uploaded file:\n{raw_text}"
             ),
-            max_tokens=2400,
+            max_tokens=JD_GENERATION_MAX_TOKENS,
         )
         normalized = normalize_generated_jd(result)
         enforce_explicit_experience_and_location(raw_text, normalized)

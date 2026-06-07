@@ -132,17 +132,23 @@ async def generate_template_definition(
             result.get("section_order"),
             (result.get("metadata") or {}).get("visual_notes") if isinstance(result.get("metadata"), dict) else None,
         )
-        log_richness_metrics("raw", result)
-        logger.warning("VISION_BLUEPRINT_CANDIDATE_JSON=%s", json.dumps(result, ensure_ascii=True))
-        result = sanitize_template_definition(result)
-        logger.info("Sanitized template DSL before validation: %s", result)
-        log_richness_metrics("sanitized", result)
-        logger.warning("VISION_BLUEPRINT_SANITIZED_JSON=%s", json.dumps(result, ensure_ascii=True))
+        raw_blueprint = dict(result)
+        log_richness_metrics("raw", raw_blueprint)
+        logger.warning("VISION_BLUEPRINT_CANDIDATE_JSON=%s", json.dumps(raw_blueprint, ensure_ascii=True))
+        sanitized_blueprint = sanitize_template_definition(raw_blueprint)
+        logger.info("Sanitized template DSL before validation: %s", sanitized_blueprint)
+        log_richness_metrics("sanitized", sanitized_blueprint)
+        logger.warning("VISION_BLUEPRINT_SANITIZED_JSON=%s", json.dumps(sanitized_blueprint, ensure_ascii=True))
+        result = sanitized_blueprint
         result.setdefault("name", template_name)
         if description:
             result.setdefault("description", description)
         definition = TemplateDefinition.model_validate(result)
-        definition = ensure_minimum_field_coverage(definition)
+        try:
+            definition = ensure_minimum_field_coverage(definition)
+        except ValueError as exc:
+            log_field_mapping_debug(raw_blueprint, sanitized_blueprint, definition, exc)
+            raise
         ensure_content_sections(definition)
         log_definition_richness("validated", definition)
         logger.warning("GENERATED_BLUEPRINT_JSON=%s", json.dumps(definition.model_dump(mode="json"), ensure_ascii=True))
@@ -472,6 +478,97 @@ def log_field_coverage(definition: TemplateDefinition) -> None:
         mapped_fields,
         definition.metadata.get("blueprint_confidence"),
     )
+
+
+def log_field_mapping_debug(
+    raw_blueprint: dict[str, Any],
+    sanitized_blueprint: dict[str, Any],
+    definition: TemplateDefinition,
+    error: Exception,
+) -> None:
+    detected_labels = collect_detected_section_labels(raw_blueprint)
+    sanitized_labels = collect_detected_section_labels(sanitized_blueprint)
+    mapped_fields = collect_mapped_fields(definition)
+    unmapped_labels = labels_not_present_in_mapped_fields(detected_labels, mapped_fields)
+    metadata = raw_blueprint.get("metadata") if isinstance(raw_blueprint.get("metadata"), dict) else {}
+    sanitized_metadata = sanitized_blueprint.get("metadata") if isinstance(sanitized_blueprint.get("metadata"), dict) else {}
+    visual_notes = metadata.get("visual_notes") or sanitized_metadata.get("visual_notes")
+    layout_regions = raw_blueprint.get("layout_regions")
+    style_definitions = raw_blueprint.get("style_definitions")
+
+    logger.error(
+        "FIELD_MAPPING_DEBUG error=%s\n"
+        "Raw Gemini Blueprint:\n%s\n"
+        "Sanitized Blueprint:\n%s\n"
+        "Detected Labels:\n%s\n"
+        "Sanitized Labels:\n%s\n"
+        "Mapped Fields:\n%s\n"
+        "Unmapped Labels:\n%s\n"
+        "layout_regions count=%s\n"
+        "style_definitions count=%s\n"
+        "visual_notes=%s",
+        error,
+        json.dumps(raw_blueprint, ensure_ascii=True, indent=2),
+        json.dumps(sanitized_blueprint, ensure_ascii=True, indent=2),
+        json.dumps(detected_labels, ensure_ascii=True, indent=2),
+        json.dumps(sanitized_labels, ensure_ascii=True, indent=2),
+        json.dumps(mapped_fields, ensure_ascii=True, indent=2),
+        json.dumps(unmapped_labels, ensure_ascii=True, indent=2),
+        len(layout_regions) if isinstance(layout_regions, list) else 0,
+        len(style_definitions) if isinstance(style_definitions, dict) else 0,
+        visual_notes,
+    )
+
+
+def collect_detected_section_labels(value: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+
+    def add_label(raw: Any) -> None:
+        label = " ".join(str(raw or "").strip().strip(":").split())
+        if label and len(label) <= 120:
+            labels.append(label)
+
+    def visit_block(block: Any) -> None:
+        if not isinstance(block, dict):
+            return
+        block_type = str(block.get("type") or "")
+        if block_type in {"section", "paragraph", "field", "card", "banner", "container", "sidebar"}:
+            add_label(block.get("label"))
+            if block_type in {"section", "paragraph", "banner"}:
+                add_label(block.get("text"))
+            add_label(block.get("name"))
+        for child in block.get("blocks") or []:
+            visit_block(child)
+        for column in block.get("columns") or []:
+            if isinstance(column, list):
+                for child in column:
+                    visit_block(child)
+
+    for block in value.get("sections") or []:
+        visit_block(block)
+    for container_key in ("header", "footer"):
+        container = value.get(container_key)
+        if isinstance(container, dict):
+            for block in container.get("blocks") or []:
+                visit_block(block)
+    for region in value.get("layout_regions") or []:
+        if not isinstance(region, dict):
+            continue
+        add_label(region.get("name"))
+        for block in region.get("blocks") or []:
+            visit_block(block)
+
+    return unique_keep_order(labels)
+
+
+def labels_not_present_in_mapped_fields(labels: list[str], mapped_fields: list[str]) -> list[str]:
+    mapped_set = set(mapped_fields)
+    unmapped: list[str] = []
+    for label in labels:
+        expected_field = field_from_label(label) or normalize_field_name(label)
+        if expected_field not in JD_FIELD_NAMES or expected_field not in mapped_set:
+            unmapped.append(label)
+    return unique_keep_order(unmapped)
 
 
 def log_richness_metrics(stage: str, value: dict[str, Any]) -> None:

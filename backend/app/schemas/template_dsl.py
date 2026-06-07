@@ -111,7 +111,7 @@ class TemplateBlock(BaseModel):
     blocks: list["TemplateBlock"] = Field(default_factory=list)
     columns: list[list["TemplateBlock"]] = Field(default_factory=list)
     widths: list[float] = Field(default_factory=list)
-    style: TextStyle | None = None
+    style: TextStyle | str | None = None
     box: BoxStyle | None = None
     divider: DividerStyle | None = None
     table: TableStyleDef | None = None
