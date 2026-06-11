@@ -96,6 +96,7 @@ def lookup_custom_template(template_id: str) -> dict | None:
             "template_html": template.template_html,
             "template_css": template.template_css,
             "mapped_fields": template.mapped_fields if isinstance(template.mapped_fields, list) else [],
+            "layout_metadata": template.layout_metadata if isinstance(template.layout_metadata, dict) else {},
         }
     finally:
         db.close()

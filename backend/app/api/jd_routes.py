@@ -47,6 +47,8 @@ class TemplateUpdateRequest(BaseModel):
     template_html: str | None = None
     template_css: str | None = None
     mapped_fields: list[str] | None = None
+    layout_metadata: dict | None = None
+    template_quality_score: dict | None = None
 
 DEFAULT_TEMPLATE_PROMPT = """Use the Wissen Technology corporate classic JD PDF layout.
 Keep the official Wissen logo, use the platform color palette (#0A2246, #1A2D58, #445377, #57CFE4, #FF540A), preserve clean section hierarchy, and render the standardized JD sections with recruiter-friendly spacing."""
@@ -159,6 +161,8 @@ def serialize_template(template: JDTemplate) -> dict:
         "template_html": template.template_html,
         "template_css": template.template_css,
         "mapped_fields": template.mapped_fields if isinstance(template.mapped_fields, list) else [],
+        "layout_metadata": template.layout_metadata if isinstance(template.layout_metadata, dict) else None,
+        "template_quality_score": template.template_quality_score if isinstance(template.template_quality_score, dict) else None,
         "version": template.version,
         "prompt": template.prompt,
         "is_custom": True,
@@ -508,6 +512,8 @@ def list_jd_templates(db: Session = Depends(get_db), current_user: User = Depend
                 "template_html": None,
                 "template_css": None,
                 "mapped_fields": [],
+                "layout_metadata": None,
+                "template_quality_score": None,
                 "version": 1,
                 "prompt": DEFAULT_TEMPLATE_PROMPT,
                 "is_custom": False,
@@ -609,11 +615,13 @@ async def upload_jd_template(
                     page_images=page_images,
                 )
                 logger.warning(
-                    "HTML_TEMPLATE_STORED name=%s html_length=%s css_length=%s mapped_fields=%s",
+                    "HTML_TEMPLATE_STORED name=%s html_length=%s css_length=%s mapped_fields=%s layout_metadata=%s template_quality_score=%s",
                     template.name,
                     len(html_template["html"]),
                     len(html_template["css"]),
                     html_template["mapped_fields"],
+                    html_template["layout_metadata"],
+                    html_template["template_quality_score"],
                 )
     except Exception as exc:
         db.rollback()
@@ -631,6 +639,8 @@ async def upload_jd_template(
         template.template_html = html_template["html"] if html_template else None
         template.template_css = html_template["css"] if html_template else None
         template.mapped_fields = html_template["mapped_fields"] if html_template else []
+        template.layout_metadata = html_template["layout_metadata"] if html_template else {}
+        template.template_quality_score = html_template["template_quality_score"] if html_template else {}
         template.definition_json = None
         template.version = 1
 
@@ -677,6 +687,10 @@ def update_jd_template(template_id: str, payload: TemplateUpdateRequest, db: Ses
         template.template_html = template_html
         template.template_css = template_css
         template.mapped_fields = mapped_fields
+        if payload.layout_metadata is not None:
+            template.layout_metadata = payload.layout_metadata
+        if payload.template_quality_score is not None:
+            template.template_quality_score = payload.template_quality_score
         template.version = template.version + 1
     db.commit()
     db.refresh(template)

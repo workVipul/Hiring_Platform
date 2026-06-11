@@ -86,6 +86,12 @@ def ensure_jd_template_module_column() -> None:
             if "mapped_fields" not in columns:
                 connection.execute(text("ALTER TABLE jd_templates ADD COLUMN mapped_fields JSON"))
                 logger.info("Added jd_templates.mapped_fields column.")
+            if "layout_metadata" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN layout_metadata JSON"))
+                logger.info("Added jd_templates.layout_metadata column.")
+            if "template_quality_score" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN template_quality_score JSON"))
+                logger.info("Added jd_templates.template_quality_score column.")
     except Exception as exc:
         logger.warning("Could not ensure jd_templates custom template columns: %s", exc)
 
