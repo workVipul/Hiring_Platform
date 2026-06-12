@@ -5,15 +5,15 @@ import { usePathname } from "next/navigation";
 
 import { useAuth } from "@/hooks/useAuth";
 
-const nav = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/dashboard/jd-generator", label: "JD Generator" },
-  { href: "/dashboard/sourcing", label: "Sourcing" },
-];
-
 export default function Sidebar() {
   const pathname = usePathname();
   const { userName, accessType, signOut } = useAuth();
+  const nav = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/dashboard/jd-generator", label: "JD Generator" },
+    { href: "/dashboard/sourcing", label: "Sourcing" },
+    { href: "/dashboard/ownership", label: accessType === "admin" || accessType === "manager" ? "Ownership" : "My Candidates" },
+  ];
 
   return (
     <aside className="sidebar">

@@ -13,8 +13,10 @@ from app.core.security import hash_password
 from app.db.session import Base, SessionLocal, engine
 from app.models.jd import JD
 from app.models.jd_detail import JDDetail
+from app.models.candidate_ownership import CandidateOwnership, OwnershipHistory, SLARule  # noqa: F401
 from app.models.user import User
 from app.models.user_access import UserAccess
+from app.services.ownership_service import ensure_sla_seed_data
 
 
 Base.metadata.create_all(bind=engine)
@@ -67,6 +69,7 @@ def seed():
     try:
         admin = ensure_user(db, USERS[0])
         ensure_user(db, USERS[1])
+        ensure_sla_seed_data(db)
 
         uploads_dir = Path(settings.UPLOADS_DIR)
         pdfs = sorted(uploads_dir.glob("*.pdf"))

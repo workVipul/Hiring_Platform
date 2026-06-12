@@ -16,6 +16,7 @@ export default function Header() {
     { href: "/dashboard", label: "Dashboard" },
     { href: "/dashboard/jd-generator", label: "JD Generator" },
     { href: "/dashboard/sourcing", label: "Sourcing" },
+    { href: "/dashboard/ownership", label: accessType === "admin" || accessType === "manager" ? "Ownership" : "My Candidates" },
   ];
 
   const handleNavigationConfirm = (e: React.MouseEvent, targetHref: string) => {

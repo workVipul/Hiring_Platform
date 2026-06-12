@@ -1715,6 +1715,126 @@ button.template-choice-card {
   box-shadow: var(--shadow-sm);
 }
 
+.candidate-card-locked {
+  opacity: 0.78;
+  background: linear-gradient(180deg, var(--surface), #f8fafc);
+}
+
+.ownership-band {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(87, 207, 228, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(87, 207, 228, 0.1);
+}
+
+.ownership-band.locked {
+  border-color: rgba(68, 83, 119, 0.24);
+  background: var(--surface-2);
+}
+
+.ownership-band strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ownership-band span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.ownership-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ownership-actions select {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.reassign-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ownership-error {
+  padding: 16px;
+  text-align: left;
+}
+
+.ownership-dialog {
+  width: min(680px, 100%);
+}
+
+.ownership-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ownership-dialog-stage {
+  grid-column: 1 / -1;
+}
+
+.ownership-page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ownership-tabs {
+  justify-self: start;
+}
+
+.ownership-admin-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.ownership-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ownership-section-heading h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+
+.ownership-table-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ownership-workbench-table table {
+  min-width: 980px;
+}
+
+.ownership-maintain-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ownership-maintain-controls select {
+  min-height: 40px;
+  padding: 8px 10px;
+}
+
 .candidate-card-skeleton {
   background: linear-gradient(90deg, var(--surface), var(--surface-2), var(--surface));
   background-size: 200% 100%;
@@ -2406,6 +2526,11 @@ button.template-choice-card {
   }
 
   .candidate-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .ownership-form-grid,
+  .ownership-actions {
     grid-template-columns: 1fr;
   }
 

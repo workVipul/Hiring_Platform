@@ -2,7 +2,7 @@ export interface AuthUser {
   userId: number;
   userName: string;
   token: string;
-  accessType: "admin" | "normal";
+  accessType: "admin" | "manager" | "normal";
 }
 
 export interface LoginResponse {
@@ -10,5 +10,5 @@ export interface LoginResponse {
   token_type: "bearer";
   user_name: string;
   user_id: number;
-  access_type: "admin" | "normal";
+  access_type: "admin" | "manager" | "normal";
 }

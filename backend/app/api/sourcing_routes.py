@@ -1,4 +1,5 @@
 import json
+from datetime import timezone
 from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
@@ -10,7 +11,9 @@ from app.core.config import settings
 from app.db.session import get_db
 from app.models.jd import JD
 from app.models.jd_detail import JDDetail
+from app.models.candidate_ownership import CandidateOwnership, SLARule
 from app.models.user import User
+from app.services.ownership_service import expire_due_ownerships, utcnow
 from app.services.zoho_service import ZohoRecruitService
 from app.services.ranking_service import CandidateRankingEngine
 from app.services.candidate_filtering import (
@@ -86,6 +89,63 @@ def combine_locations(*values: str | None) -> list[str]:
         import re
         locations.extend([part.strip() for part in re.split(r"\bor\b|[,|;/]", str(value), flags=re.IGNORECASE) if part.strip()])
     return unique_keep_order(locations)
+
+
+def merge_ownership_data(db: Session, current_user: User, candidates: list[dict]) -> list[dict]:
+    if not candidates:
+        return candidates
+
+    expire_due_ownerships(db)
+    candidate_ids = [str(candidate.get("id")) for candidate in candidates if candidate.get("id")]
+    if not candidate_ids:
+        return candidates
+
+    ownerships = db.query(CandidateOwnership, SLARule).join(
+        SLARule, CandidateOwnership.sla_stage_id == SLARule.id
+    ).filter(
+        CandidateOwnership.zoho_candidate_id.in_(candidate_ids),
+        CandidateOwnership.status == "ACTIVE",
+        CandidateOwnership.expires_at > utcnow(),
+    ).all()
+    ownership_by_candidate = {
+        ownership.zoho_candidate_id: (ownership, rule)
+        for ownership, rule in ownerships
+    }
+
+    enriched = []
+    for candidate in candidates:
+        candidate_id = str(candidate.get("id"))
+        ownership_tuple = ownership_by_candidate.get(candidate_id)
+        if not ownership_tuple:
+            enriched.append({**candidate, "ownership": None})
+            continue
+
+        ownership, rule = ownership_tuple
+        expires_at = ownership.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        remaining_seconds = max(0, int((expires_at - utcnow()).total_seconds()))
+        enriched.append(
+            {
+                **candidate,
+                "ownership": {
+                    "id": ownership.id,
+                    "zoho_candidate_id": ownership.zoho_candidate_id,
+                    "candidate_name": ownership.candidate_name,
+                    "job_opening_id": ownership.job_opening_id,
+                    "owner_recruiter_id": ownership.owner_recruiter_id,
+                    "owner_recruiter_name": ownership.owner_recruiter_name,
+                    "sla_stage_id": ownership.sla_stage_id,
+                    "sla_stage_name": rule.stage_name,
+                    "locked_at": ownership.locked_at.isoformat(),
+                    "expires_at": expires_at.isoformat(),
+                    "status": ownership.status,
+                    "remaining_seconds": remaining_seconds,
+                    "is_locked_by_other": ownership.owner_recruiter_id != current_user.id and remaining_seconds > 0,
+                },
+            }
+        )
+    return enriched
 
 
 def number_from_unknown(value) -> float | None:
@@ -327,6 +387,7 @@ async def build_candidate_response(
     )
     result_limit = min(per_page, settings.SOURCING_RESULT_LIMIT)
     ranked_candidates = ranked_candidates[:result_limit]
+    ranked_candidates = merge_ownership_data(db, current_user, ranked_candidates)
 
     return {
         "jd_id": jd.id,
