@@ -93,8 +93,10 @@ export default function CandidateList({
   const [ownershipSavingId, setOwnershipSavingId] = useState<string | null>(null);
   const [acceptCandidate, setAcceptCandidate] = useState<Candidate | null>(null);
   const [acceptSlaStageId, setAcceptSlaStageId] = useState<number | "">("");
+  const [rejectCandidate, setRejectCandidate] = useState<Candidate | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectSavingId, setRejectSavingId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const currentUserId = useAuthStore((state) => state.userId);
   const currentUserName = useAuthStore((state) => state.userName);
   const accessType = useAuthStore((state) => state.accessType);
   const acceptSlaRules = useMemo(() => {
@@ -266,6 +268,39 @@ export default function CandidateList({
     }
   }
 
+  function openRejectModal(candidate: Candidate) {
+    setOwnershipError(null);
+    setRejectCandidate(candidate);
+    setRejectReason("");
+  }
+
+  async function submitReject() {
+    if (!rejectCandidate || rejectReason.trim().length < 3) return;
+    setRejectSavingId(rejectCandidate.id);
+    setOwnershipError(null);
+    try {
+      await jdApi.rejectCandidate({
+        jd_id: jdId,
+        zoho_candidate_id: rejectCandidate.id,
+        candidate_name: rejectCandidate.full_name,
+        job_opening_id: String(jd?.metadata?.zoho_recruit_id ?? jdId),
+        reason: rejectReason.trim(),
+      });
+      setCandidates((prev) => prev.filter((candidate) => candidate.id !== rejectCandidate.id));
+      setCandidateDecisions((prev) => {
+        const next = { ...prev };
+        delete next[rejectCandidate.id];
+        return next;
+      });
+      setRejectCandidate(null);
+      setRejectReason("");
+    } catch (e) {
+      setOwnershipError(e instanceof Error ? e.message : "Failed to reject candidate");
+    } finally {
+      setRejectSavingId(null);
+    }
+  }
+
   return (
     <div className="candidate-page">
       <div className="candidate-toolbar">
@@ -387,11 +422,11 @@ export default function CandidateList({
                       expanded={expandedIds.has(candidate.id)}
                       initials={initials(candidate.full_name)}
                       decision={candidateDecisions[candidate.id]}
-                      currentUserId={currentUserId}
-                      saving={ownershipSavingId === candidate.id}
+                      saving={ownershipSavingId === candidate.id || rejectSavingId === candidate.id}
                       onToggle={() => toggleExpand(candidate.id)}
                       onDecision={(decision) => setCandidateDecision(candidate.id, decision)}
                       onAccept={() => openAcceptModal(candidate)}
+                      onReject={() => openRejectModal(candidate)}
                     />
                   ))}
                 </div>
@@ -457,6 +492,52 @@ export default function CandidateList({
               </button>
               <button className="primary-button" onClick={submitAccept} disabled={!acceptSlaStageId || Boolean(ownershipSavingId)}>
                 Confirm Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {rejectCandidate && (
+        <div className="confirm-overlay">
+          <div className="confirm-dialog ownership-dialog">
+            <div className="confirm-copy">
+              <h3>Reject candidate</h3>
+              <p>This candidate will be hidden for you on this job only. Other recruiters can still source the candidate unless they reject them too.</p>
+            </div>
+            <div className="ownership-form-grid">
+              <label>
+                Candidate Name
+                <input value={rejectCandidate.full_name} disabled />
+              </label>
+              <label>
+                Candidate ID
+                <input value={rejectCandidate.id} disabled />
+              </label>
+              <label>
+                Job ID
+                <input value={String(jd?.metadata?.zoho_recruit_id ?? jdId)} disabled />
+              </label>
+              <label>
+                Recruiter Name
+                <input value={currentUserName ?? "Recruiter"} disabled />
+              </label>
+              <label className="ownership-dialog-stage">
+                Rejection Reason
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Add a short reason for rejecting this candidate"
+                  rows={4}
+                />
+              </label>
+            </div>
+            <div className="confirm-actions">
+              <button className="ghost-button" onClick={() => setRejectCandidate(null)} disabled={Boolean(rejectSavingId)}>
+                Cancel
+              </button>
+              <button className="danger-button" onClick={submitReject} disabled={rejectReason.trim().length < 3 || Boolean(rejectSavingId)}>
+                Reject Candidate
               </button>
             </div>
           </div>
@@ -914,27 +995,26 @@ function CandidateCard({
   expanded,
   initials,
   decision,
-  currentUserId,
   saving,
   onToggle,
   onDecision,
   onAccept,
+  onReject,
 }: {
   candidate: Candidate;
   expanded: boolean;
   initials: string;
   decision?: CandidateDecision;
-  currentUserId: number | null;
   saving: boolean;
   onToggle: () => void;
   onDecision: (decision: CandidateDecision) => void;
   onAccept: () => void;
+  onReject: () => void;
 }) {
   const matchedSkills = candidate.skills.filter((skill) => !candidate.missing_skills.includes(skill));
   const fitTone = candidate.match_percentage >= 80 ? "strong" : candidate.match_percentage >= 50 ? "possible" : "weak";
   const ownership = candidate.ownership;
   const lockedByOther = Boolean(ownership?.is_locked_by_other);
-  const ownedByCurrentUser = Boolean(ownership && ownership.owner_recruiter_id === currentUserId);
 
   return (
     <article className={lockedByOther ? "candidate-card candidate-card-locked" : "candidate-card"}>
@@ -953,15 +1033,6 @@ function CandidateCard({
           <span>{fitTone === "strong" ? "Strong Fit" : fitTone === "possible" ? "Possible Fit" : "Weak Fit"}</span>
         </div>
       </div>
-
-      {ownership && (
-        <div className={lockedByOther ? "ownership-band locked" : "ownership-band"}>
-          <div>
-            <strong>{lockedByOther ? `Owned by ${ownership.owner_recruiter_name}` : "Ownership active"}</strong>
-            <span>{ownership.sla_stage_name ?? "SLA stage"} - {formatRemainingTime(ownership.remaining_seconds)} remaining</span>
-          </div>
-        </div>
-      )}
 
       <div className="candidate-metrics">
         <div>
@@ -993,29 +1064,36 @@ function CandidateCard({
         {expanded ? "Hide analysis" : "View analysis"}
       </button>
 
-      <div className="candidate-decision-actions">
-        <button
-          className={decision === "rejected" ? "danger-button active" : "danger-button"}
-          type="button"
-          onClick={() => onDecision("rejected")}
-        >
-          Reject
-        </button>
-        <button
-          className={decision === "accepted" ? "primary-button active" : "secondary-button"}
-          type="button"
-          disabled={lockedByOther || saving}
-          onClick={() => {
-            if (ownership && ownedByCurrentUser) {
-              onDecision("accepted");
-              return;
-            }
-            onAccept();
-          }}
-        >
-          {lockedByOther ? "Owned" : ownership ? "Accepted" : "Accept"}
-        </button>
-      </div>
+      {ownership ? (
+        <div className={lockedByOther ? "ownership-band ownership-band-actions locked" : "ownership-band ownership-band-actions owned"}>
+          <div>
+            <strong>{lockedByOther ? `Owned by ${ownership.owner_recruiter_name}` : "Ownership active"}</strong>
+            <span>{ownership.sla_stage_name ?? "SLA stage"} - {formatRemainingTime(ownership.remaining_seconds)} remaining</span>
+          </div>
+        </div>
+      ) : (
+        <div className="candidate-decision-actions">
+          <button
+            className={decision === "rejected" ? "danger-button active" : "danger-button"}
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              onDecision("rejected");
+              onReject();
+            }}
+          >
+            Reject
+          </button>
+          <button
+            className={decision === "accepted" ? "primary-button active" : "secondary-button"}
+            type="button"
+            disabled={saving}
+            onClick={onAccept}
+          >
+            Accept
+          </button>
+        </div>
+      )}
 
       {expanded && (
         <div className="candidate-analysis">

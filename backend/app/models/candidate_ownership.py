@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, func, text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 
 from app.db.session import Base
 
@@ -51,3 +51,26 @@ class OwnershipHistory(Base):
     new_stage = Column(String(120), nullable=True)
     performed_by = Column(String(255), nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CandidateRejection(Base):
+    __tablename__ = "candidate_rejections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    zoho_candidate_id = Column(String(100), nullable=False, index=True)
+    candidate_name = Column(String(255), nullable=False)
+    jd_id = Column(Integer, nullable=False, index=True)
+    job_opening_id = Column(String(100), nullable=True, index=True)
+    recruiter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    recruiter_name = Column(String(255), nullable=False)
+    reason = Column(Text, nullable=False)
+    rejected_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "zoho_candidate_id",
+            "jd_id",
+            "recruiter_id",
+            name="ux_candidate_rejection_recruiter_jd_candidate",
+        ),
+    )

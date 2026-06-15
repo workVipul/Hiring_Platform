@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { jdApi, type CandidateRejection } from "@/services/jdApi";
 import { ownershipApi, type CandidateOwnership, type RecruiterOption, type SLARule } from "@/services/ownershipApi";
 import { useAuthStore } from "@/store/authStore";
 
-type OwnershipTab = "my" | "all" | "sla";
+type OwnershipTab = "my" | "all" | "rejected" | "sla";
 
 const BLUEPRINT_ORDER = ["SCR", "R1/R2", "T1/T2", "CSCR", "CR1", "CR2", "OFR", "JOIN", "REJ", "ARC"];
 
@@ -15,6 +16,7 @@ export default function OwnershipPage() {
   const [rules, setRules] = useState<SLARule[]>([]);
   const [myOwnerships, setMyOwnerships] = useState<CandidateOwnership[]>([]);
   const [allOwnerships, setAllOwnerships] = useState<CandidateOwnership[]>([]);
+  const [rejectedCandidates, setRejectedCandidates] = useState<CandidateRejection[]>([]);
   const [recruiters, setRecruiters] = useState<RecruiterOption[]>([]);
   const [newBlueprint, setNewBlueprint] = useState("SCR");
   const [newStageName, setNewStageName] = useState("");
@@ -41,9 +43,11 @@ export default function OwnershipPage() {
         canManage ? ownershipApi.listActiveOwnerships() : Promise.resolve([]),
         canManage ? ownershipApi.listRecruiters() : Promise.resolve([]),
       ]);
+      const rejectedRows = canManage ? await jdApi.listCandidateRejections() : [];
       setRules(sortRules(ruleRows));
       setMyOwnerships(mineRows);
       setAllOwnerships(allRows);
+      setRejectedCandidates(rejectedRows);
       setRecruiters(recruiterRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load ownership data");
@@ -125,6 +129,19 @@ export default function OwnershipPage() {
     }
   }
 
+  async function restoreRejectedCandidate(rejection: CandidateRejection) {
+    setSavingId(`rejection-${rejection.id}`);
+    setError(null);
+    try {
+      await jdApi.restoreCandidateRejection(rejection.id);
+      setRejectedCandidates((prev) => prev.filter((row) => row.id !== rejection.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to restore rejected candidate");
+    } finally {
+      setSavingId(null);
+    }
+  }
+
   function replaceOwnership(updated: CandidateOwnership) {
     setMyOwnerships((prev) => prev.map((item) => item.zoho_candidate_id === updated.zoho_candidate_id ? updated : item));
     setAllOwnerships((prev) => prev.map((item) => item.zoho_candidate_id === updated.zoho_candidate_id ? updated : item));
@@ -167,13 +184,18 @@ export default function OwnershipPage() {
               </button>
             )}
             {canManage && (
+              <button className={activeTab === "rejected" ? "active" : ""} onClick={() => setActiveTab("rejected")}>
+                Rejected Candidates
+              </button>
+            )}
+            {canManage && (
               <button className={activeTab === "sla" ? "active" : ""} onClick={() => setActiveTab("sla")}>
                 SLA Stages
               </button>
             )}
           </div>
 
-          {activeTab !== "sla" && (
+          {(activeTab === "my" || activeTab === "all") && (
             <OwnershipTable
               ownerships={visibleOwnerships}
               rules={rules.filter((rule) => rule.active)}
@@ -187,6 +209,14 @@ export default function OwnershipPage() {
             />
           )}
 
+          {activeTab === "rejected" && canManage && (
+            <RejectedCandidatesTable
+              rejections={rejectedCandidates}
+              savingId={savingId}
+              onRestore={restoreRejectedCandidate}
+            />
+          )}
+
           {activeTab === "sla" && canManage && (
             <div className="panel ownership-admin-panel">
               <div className="ownership-section-heading">
@@ -195,13 +225,13 @@ export default function OwnershipPage() {
                   <h2>Zoho Stage Table</h2>
                 </div>
               </div>
-              <div className="table-wrap">
+              <div className="table-wrap sla-management-table">
                 <table>
                   <thead>
                     <tr>
                       <th>Blueprint</th>
                       <th>Stage</th>
-                      <th>Period</th>
+                      <th>Period (days)</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
@@ -224,13 +254,16 @@ export default function OwnershipPage() {
                           />
                         </td>
                         <td>
-                          <input
-                            type="number"
-                            min={0}
-                            value={rule.duration_days}
-                            disabled={savingId === rule.id}
-                            onChange={(e) => setRules((prev) => prev.map((item) => item.id === rule.id ? { ...item, duration_days: Number(e.target.value) } : item))}
-                          />
+                          <div className="period-input">
+                            <input
+                              type="number"
+                              min={0}
+                              value={rule.duration_days}
+                              disabled={savingId === rule.id}
+                              onChange={(e) => setRules((prev) => prev.map((item) => item.id === rule.id ? { ...item, duration_days: Number(e.target.value) } : item))}
+                            />
+                            <span>days</span>
+                          </div>
                         </td>
                         <td><span className="badge">{rule.active ? "Active" : "Inactive"}</span></td>
                         <td className="ownership-table-actions">
@@ -255,7 +288,12 @@ export default function OwnershipPage() {
                     <tr>
                       <td><input value={newBlueprint} onChange={(e) => setNewBlueprint(e.target.value.toUpperCase())} /></td>
                       <td><input placeholder="New stage" value={newStageName} onChange={(e) => setNewStageName(e.target.value)} /></td>
-                      <td><input type="number" min={0} value={newDurationDays} onChange={(e) => setNewDurationDays(Number(e.target.value))} /></td>
+                      <td>
+                        <div className="period-input">
+                          <input type="number" min={0} value={newDurationDays} onChange={(e) => setNewDurationDays(Number(e.target.value))} />
+                          <span>days</span>
+                        </div>
+                      </td>
                       <td><span className="badge">Active</span></td>
                       <td>
                         <button className="primary-button compact-button" disabled={savingId === "new" || !newStageName.trim()} onClick={createRule}>
@@ -271,6 +309,80 @@ export default function OwnershipPage() {
         </>
       )}
     </section>
+  );
+}
+
+function RejectedCandidatesTable({
+  rejections,
+  savingId,
+  onRestore,
+}: {
+  rejections: CandidateRejection[];
+  savingId: number | string | null;
+  onRestore: (rejection: CandidateRejection) => void;
+}) {
+  const groupedByJob = useMemo(() => {
+    return rejections.reduce<Record<string, CandidateRejection[]>>((groups, rejection) => {
+      const key = `${rejection.jd_id}:${rejection.jd_title}`;
+      groups[key] = [...(groups[key] ?? []), rejection];
+      return groups;
+    }, {});
+  }, [rejections]);
+
+  return (
+    <div className="panel ownership-admin-panel">
+      <div className="ownership-section-heading">
+        <div>
+          <p className="eyebrow">Rejected Candidates</p>
+          <h2>{rejections.length} Hidden Candidate Records</h2>
+        </div>
+      </div>
+      <div className="table-wrap rejected-candidates-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Candidate / Job</th>
+              <th>Recruiter</th>
+              <th>Reason</th>
+              <th>Rejected</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(groupedByJob).flatMap(([jobKey, rows]) => {
+              const jobTitle = jobKey.slice(jobKey.indexOf(":") + 1);
+              return [
+                <tr key={jobKey} className="rejected-job-row">
+                  <td colSpan={5}>{jobTitle}</td>
+                </tr>,
+                ...rows.map((rejection) => (
+                  <tr key={rejection.id}>
+                    <td>
+                      <strong>{rejection.candidate_name}</strong>
+                      <span className="line-clamp">{rejection.zoho_candidate_id}</span>
+                      <span className="line-clamp">Zoho Job: {rejection.job_opening_id || "-"}</span>
+                    </td>
+                    <td>{rejection.recruiter_name}</td>
+                    <td><span className="rejection-reason">{rejection.reason}</span></td>
+                    <td>{formatDateTime(rejection.rejected_at)}</td>
+                    <td>
+                      <button
+                        className="secondary-button compact-button"
+                        disabled={savingId === `rejection-${rejection.id}`}
+                        onClick={() => onRestore(rejection)}
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                )),
+              ];
+            })}
+          </tbody>
+        </table>
+        {rejections.length === 0 && <div className="empty-state">No rejected candidate records yet.</div>}
+      </div>
+    </div>
   );
 }
 
@@ -308,9 +420,7 @@ function OwnershipTable({
           <thead>
             <tr>
               <th>Candidate</th>
-              <th>Owner</th>
-              <th>SLA Stage</th>
-              <th>Remaining</th>
+              <th>SLA / Expiry</th>
               <th>Maintain</th>
               {canReassign && <th>Reassign</th>}
             </tr>
@@ -321,13 +431,13 @@ function OwnershipTable({
                 <td>
                   <strong>{ownership.candidate_name}</strong>
                   <span className="line-clamp">{ownership.zoho_candidate_id}</span>
+                  {canReassign && <span className="line-clamp">Owner: {ownership.owner_recruiter_name}</span>}
                 </td>
-                <td>{ownership.owner_recruiter_name}</td>
                 <td>
                   <span className="badge">{ownership.sla_stage_name}</span>
+                  <span className="line-clamp">Remaining: {formatRemainingTime(ownership.remaining_seconds)}</span>
                   <span className="line-clamp">{formatDateTime(ownership.expires_at)}</span>
                 </td>
-                <td>{formatRemainingTime(ownership.remaining_seconds)}</td>
                 <td>
                   <div className="ownership-maintain-controls">
                     <select

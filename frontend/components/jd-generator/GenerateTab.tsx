@@ -36,7 +36,7 @@ const inputChecklist = [
     label: "Responsibilities",
     hint: "What the hire will own",
     question: "What are the core responsibilities for this role?",
-    pattern: /\b(responsibility|own|deliver|design|build|manage|lead|develop|implement|collaborate|review|architect)\b/i,
+    pattern: /\b(responsibility|own|deliver|design|build|manage|management|lead|develop|implement|collaborate|review|architect|ensure|maintain|monitor|operate|support|troubleshoot|scale|scalability|availability|reliability|performance|on-call|incident|slo|sli)\b/i,
   },
   {
     id: "location",
@@ -477,8 +477,21 @@ function assessInputCompleteness(input: string) {
     id: item.id,
     label: item.label,
     hint: item.hint,
-    complete: item.pattern.test(input),
+    complete: item.id === "skills" ? hasMustHaveSkills(input) : item.pattern.test(input),
   }));
+}
+
+function hasMustHaveSkills(input: string) {
+  const requiredSkillSet = input.match(/^Required Skill Set:[ \t]*(.+)$/im)?.[1]?.trim() ?? "";
+  const isZohoFormattedInput = /^Zoho Recruit Job ID:/im.test(input) || /^Required Skill Set:/im.test(input);
+  if (isZohoFormattedInput) {
+    return requiredSkillSet.length > 0;
+  }
+
+  return (
+    /\b(required skill set|required skills?|must[- ]have skills?|core technologies|technical skills)\b/i.test(input)
+    && /\b(java|python|react|node|aws|azure|sql|spring|kubernetes|docker|microservices|api|angular|devops|testing|prometheus|grafana|terraform)\b/i.test(input)
+  );
 }
 
 function assessChatCompleteness(answeredCount: number) {

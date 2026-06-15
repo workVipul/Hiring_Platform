@@ -2,8 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "NinjaForge — AI Hiring Platform",
+  title: "NinjaForge - AI Hiring Platform",
   description: "Generate, manage, and analyse Job Descriptions with AI",
+  icons: {
+    icon: "/wissen_logo.png",
+    shortcut: "/wissen_logo.png",
+    apple: "/wissen_logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
