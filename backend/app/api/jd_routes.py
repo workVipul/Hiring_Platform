@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_access_type, get_current_user
 from app.db.session import get_db
-from app.llm.factory import get_llm_provider
+from app.llm.factory import get_llm_provider, get_vision_llm_provider
 from app.models.jd import JD
 from app.models.jd_detail import JDDetail
 from app.models.jd_template import JDTemplate
@@ -576,7 +576,7 @@ async def upload_jd_template(
             )
             logger.warning(
                 "TEMPLATE_UPLOAD_PIPELINE=vision provider=%s model=%s filename=%s image_attachments=%s",
-                settings.LLM_PROVIDER,
+                settings.VISION_LLM_PROVIDER,
                 settings.LLM_VISION_MODEL or settings.LLM_MODEL,
                 filename,
                 image_attachments,
@@ -584,7 +584,7 @@ async def upload_jd_template(
             if not page_images:
                 raise ValueError("Template PDF rendered zero pages")
 
-            llm = get_llm_provider()
+            llm = get_vision_llm_provider()
             definition = None
             html_template = None
             if settings.ENABLE_LEGACY_DSL:

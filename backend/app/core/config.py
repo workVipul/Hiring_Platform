@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     # LLM provider configuration
     LLM_PROVIDER: str = "groq"
     LLM_MODEL: str = "llama-3.3-70b-versatile"
+    VISION_LLM_PROVIDER: str = "gemini"
     LLM_VISION_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     ENABLE_LEGACY_DSL: bool = False
     GROQ_API_KEY: str = ""
@@ -44,6 +45,10 @@ class Settings(BaseSettings):
     def validate_provider_configuration(self):
         if self.LLM_PROVIDER.lower() == "gemini" and not self.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is required when LLM_PROVIDER=gemini")
+        if self.VISION_LLM_PROVIDER.lower() == "gemini" and not self.GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is required when VISION_LLM_PROVIDER=gemini")
+        if self.LLM_PROVIDER.lower() == "groq" and not self.GROQ_API_KEY:
+            raise ValueError("GROQ_API_KEY is required when LLM_PROVIDER=groq")
         return self
 
     class Config:

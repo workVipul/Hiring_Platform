@@ -6,8 +6,16 @@ from app.llm.base import LLMProvider
 
 @lru_cache(maxsize=1)
 def get_llm_provider() -> LLMProvider:
-    provider = settings.LLM_PROVIDER.lower()
+    return build_llm_provider(settings.LLM_PROVIDER)
 
+
+@lru_cache(maxsize=1)
+def get_vision_llm_provider() -> LLMProvider:
+    return build_llm_provider(settings.VISION_LLM_PROVIDER)
+
+
+def build_llm_provider(provider_name: str) -> LLMProvider:
+    provider = provider_name.lower()
     if provider == "groq":
         from app.llm.providers.groq_provider import GroqProvider
 
@@ -28,4 +36,4 @@ def get_llm_provider() -> LLMProvider:
 
         return GeminiProvider()
 
-    raise ValueError(f"Unknown LLM_PROVIDER: {provider}. Valid: groq, grok, anthropic, gemini")
+    raise ValueError(f"Unknown LLM provider: {provider}. Valid: groq, grok, anthropic, gemini")
