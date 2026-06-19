@@ -4,7 +4,7 @@ const BASE = process.env.NEXT_PUBLIC_BACKEND_URL ?? "";
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  const stored = window.localStorage.getItem("ninjaforge-auth");
+  const stored = window.localStorage.getItem("recruitninja-auth");
   if (!stored) return null;
   try {
     const parsed = JSON.parse(stored);
