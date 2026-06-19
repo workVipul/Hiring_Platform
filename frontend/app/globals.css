@@ -1715,6 +1715,320 @@ button.template-choice-card {
   box-shadow: var(--shadow-sm);
 }
 
+.candidate-card-locked {
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+  border-color: rgba(68, 83, 119, 0.28);
+}
+
+.ownership-band {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(87, 207, 228, 0.28);
+  border-radius: var(--radius-md);
+  background: rgba(87, 207, 228, 0.1);
+}
+
+.ownership-band.owned {
+  border-color: rgba(4, 120, 87, 0.24);
+  background: linear-gradient(135deg, #ecfdf5, #f7fffb);
+}
+
+.ownership-band.locked {
+  border-color: rgba(255, 84, 10, 0.28);
+  background: linear-gradient(135deg, #fff7ed, #ffffff);
+}
+
+.ownership-band-actions {
+  margin-top: auto;
+}
+
+.ownership-band strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ownership-band span {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.ownership-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ownership-actions select {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.reassign-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ownership-error {
+  padding: 16px;
+  text-align: left;
+}
+
+.ownership-dialog {
+  width: min(680px, 100%);
+}
+
+.ownership-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ownership-dialog-stage {
+  grid-column: 1 / -1;
+}
+
+.ownership-page-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ownership-tabs {
+  justify-self: start;
+}
+
+.ownership-admin-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.ownership-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ownership-section-heading h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+}
+
+.ownership-table-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ownership-workbench-table table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.ownership-workbench-table th,
+.ownership-workbench-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+.ownership-workbench-table th:nth-child(1) {
+  width: 28%;
+}
+
+.ownership-workbench-table th:nth-child(2) {
+  width: 24%;
+}
+
+.ownership-workbench-table th:nth-child(3) {
+  width: 34%;
+}
+
+.ownership-workbench-table th:nth-child(4) {
+  width: 14%;
+}
+
+.ownership-maintain-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.ownership-maintain-controls select {
+  min-height: 40px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.ownership-admin-panel .table-wrap {
+  overflow-x: hidden;
+}
+
+.ownership-admin-panel table {
+  table-layout: fixed;
+}
+
+.ownership-admin-panel input,
+.ownership-admin-panel select {
+  min-width: 0;
+}
+
+.ownership-admin-panel .compact-button {
+  white-space: nowrap;
+}
+
+.sla-management-table {
+  overflow-x: hidden;
+}
+
+.sla-management-table table {
+  table-layout: fixed;
+}
+
+.sla-management-table th,
+.sla-management-table td {
+  padding: 12px 20px;
+  vertical-align: middle;
+}
+
+.sla-management-table th:nth-child(1) {
+  width: 20%;
+}
+
+.sla-management-table th:nth-child(2) {
+  width: 30%;
+}
+
+.sla-management-table th:nth-child(3) {
+  width: 20%;
+}
+
+.sla-management-table th:nth-child(4) {
+  width: 14%;
+}
+
+.sla-management-table th:nth-child(5) {
+  width: 16%;
+}
+
+.sla-management-table input {
+  height: 44px;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.period-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.period-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 45, 88, 0.1);
+}
+
+.period-input input {
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.period-input input:focus {
+  box-shadow: none;
+}
+
+.period-input span {
+  padding: 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  border-left: 1px solid var(--border);
+}
+
+.sla-management-table .ownership-table-actions {
+  display: table-cell;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.sla-management-table .compact-button {
+  height: 36px;
+  padding: 9px 12px;
+  font-size: 12px;
+  line-height: 1;
+  margin: 0;
+}
+
+.sla-management-table .compact-button + .compact-button {
+  margin-left: 8px;
+}
+
+.rejected-candidates-table {
+  overflow-x: hidden;
+}
+
+.rejected-candidates-table table {
+  table-layout: fixed;
+}
+
+.rejected-candidates-table th,
+.rejected-candidates-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+}
+
+.rejected-candidates-table th:nth-child(1) {
+  width: 28%;
+}
+
+.rejected-candidates-table th:nth-child(2) {
+  width: 14%;
+}
+
+.rejected-candidates-table th:nth-child(3) {
+  width: 32%;
+}
+
+.rejected-candidates-table th:nth-child(4) {
+  width: 14%;
+}
+
+.rejected-candidates-table th:nth-child(5) {
+  width: 12%;
+}
+
+.rejected-job-row td {
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rejection-reason {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .candidate-card-skeleton {
   background: linear-gradient(90deg, var(--surface), var(--surface-2), var(--surface));
   background-size: 200% 100%;
@@ -2406,6 +2720,11 @@ button.template-choice-card {
   }
 
   .candidate-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .ownership-form-grid,
+  .ownership-actions {
     grid-template-columns: 1fr;
   }
 

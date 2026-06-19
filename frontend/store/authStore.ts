@@ -7,13 +7,13 @@ interface AuthState {
   token: string | null;
   userId: number | null;
   userName: string | null;
-  accessType: "admin" | "normal" | null;
+  accessType: "admin" | "manager" | "normal" | null;
   hydrated: boolean;
   hasUnsavedJD: boolean;
   pendingNavigationUrl: string | null;
   pendingNavigationAction: (() => void) | null;
   setHydrated: (hydrated: boolean) => void;
-  setAuth: (token: string, userId: number, userName: string, accessType: "admin" | "normal") => void;
+  setAuth: (token: string, userId: number, userName: string, accessType: "admin" | "manager" | "normal") => void;
   setHasUnsavedJD: (val: boolean) => void;
   setPendingNavigationUrl: (url: string | null) => void;
   setPendingNavigationAction: (action: (() => void) | null) => void;

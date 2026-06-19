@@ -1,20 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+import asyncio
 import os
 import logging
 
 from app.core.config import settings
-from app.db.session import Base, engine
+from app.db.session import Base, SessionLocal, engine
 from sqlalchemy import inspect, text
 
 # Import all models so SQLAlchemy registers them before create_all runs.
 # If you skip this, Base.metadata won't know about the JD table.
-from app.models import jd, jd_detail, jd_template, user, user_access  # noqa: F401
+from app.models import candidate_ownership, jd, jd_detail, jd_template, user, user_access  # noqa: F401
+from app.services.ownership_service import ensure_sla_seed_data, expire_due_ownerships
 
 # Import routers
 from app.api.auth_routes import router as auth_router
 from app.api.jd_routes import router as jd_router
+from app.api.ownership_routes import router as ownership_router
 from app.api.sourcing_routes import router as sourcing_router
 
 # --- Existing AI routes (keep these) ---
@@ -86,17 +89,75 @@ def ensure_jd_template_module_column() -> None:
             if "mapped_fields" not in columns:
                 connection.execute(text("ALTER TABLE jd_templates ADD COLUMN mapped_fields JSON"))
                 logger.info("Added jd_templates.mapped_fields column.")
+            if "layout_metadata" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN layout_metadata JSON"))
+                logger.info("Added jd_templates.layout_metadata column.")
+            if "template_quality_score" not in columns:
+                connection.execute(text("ALTER TABLE jd_templates ADD COLUMN template_quality_score JSON"))
+                logger.info("Added jd_templates.template_quality_score column.")
     except Exception as exc:
         logger.warning("Could not ensure jd_templates custom template columns: %s", exc)
 
 
+def ensure_ownership_constraints() -> None:
+    try:
+        with engine.begin() as connection:
+            inspector = inspect(engine)
+            columns = {column["name"] for column in inspector.get_columns("sla_rules")}
+            if "blueprint" not in columns:
+                connection.execute(text("ALTER TABLE sla_rules ADD COLUMN blueprint VARCHAR(40) DEFAULT 'SCR' NOT NULL"))
+                logger.info("Added sla_rules.blueprint column.")
+            if engine.dialect.name != "postgresql":
+                return
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ux_candidate_ownership_active_candidate "
+                    "ON candidate_ownership (zoho_candidate_id) WHERE status = 'ACTIVE'"
+                )
+            )
+    except Exception as exc:
+        logger.warning("Could not ensure candidate ownership constraints: %s", exc)
+
+
+def seed_sla_rules() -> None:
+    db = SessionLocal()
+    try:
+        ensure_sla_seed_data(db)
+    except Exception as exc:
+        logger.warning("Could not seed SLA rules: %s", exc)
+    finally:
+        db.close()
+
+
+async def ownership_expiry_loop() -> None:
+    while True:
+        await asyncio.sleep(60 * 60)
+        db = SessionLocal()
+        try:
+            count = expire_due_ownerships(db)
+            if count:
+                logger.info("Expired %s candidate ownership records.", count)
+        except Exception as exc:
+            logger.warning("Candidate ownership expiry job failed: %s", exc)
+        finally:
+            db.close()
+
+
 drop_legacy_jd_score_column()
 ensure_jd_template_module_column()
+ensure_ownership_constraints()
+seed_sla_rules()
+
+
+@app.on_event("startup")
+async def start_background_jobs():
+    asyncio.create_task(ownership_expiry_loop())
 
 # ---- Routes ----
 app.include_router(auth_router)
 app.include_router(jd_router)
 app.include_router(sourcing_router)
+app.include_router(ownership_router)
 # app.include_router(ai_router)   # uncomment when ready
 
 

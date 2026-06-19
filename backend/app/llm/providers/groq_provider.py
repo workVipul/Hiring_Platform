@@ -11,6 +11,9 @@ from app.llm.base import LLMProvider
 
 logger = logging.getLogger(__name__)
 
+GROQ_TEXT_MAX_OUTPUT_TOKENS = 4000
+GROQ_VISION_MAX_OUTPUT_TOKENS = 3500
+
 
 class GroqProvider(LLMProvider):
     BASE_URL = "https://api.groq.com/openai/v1"
@@ -30,6 +33,15 @@ class GroqProvider(LLMProvider):
         
         logger = logging.getLogger(__name__)
         
+        request_max_tokens = min(max_tokens, GROQ_TEXT_MAX_OUTPUT_TOKENS)
+        if request_max_tokens != max_tokens:
+            logger.warning(
+                "GROQ_MAX_TOKENS_CAPPED requested=%s capped=%s model=%s",
+                max_tokens,
+                request_max_tokens,
+                self.model,
+            )
+
         models_to_try = [self.model]
         if self.model != "llama-3.1-8b-instant":
             models_to_try.append("llama-3.1-8b-instant")
@@ -55,7 +67,7 @@ class GroqProvider(LLMProvider):
                                     {"role": "system", "content": system},
                                     {"role": "user", "content": user},
                                 ],
-                                "max_tokens": max_tokens,
+                                "max_tokens": request_max_tokens,
                                 "temperature": 0.3,
                                 "response_format": {"type": "json_object"},
                             },
@@ -102,8 +114,20 @@ class GroqProvider(LLMProvider):
                                         f"Falling back to next model: {models_to_try[model_attempt_idx + 1]}"
                                     )
                                     break
-                                raise
-                        raise
+                                logger.error(
+                                    "GROQ_HTTP_ERROR status=%s model=%s body=%s",
+                                    e.response.status_code,
+                                    model,
+                                    e.response.text[:2000],
+                                )
+                                raise ValueError(f"Groq API error {e.response.status_code}: {e.response.text[:1000]}") from e
+                        logger.error(
+                            "GROQ_HTTP_ERROR status=%s model=%s body=%s",
+                            e.response.status_code,
+                            model,
+                            e.response.text[:2000],
+                        )
+                        raise ValueError(f"Groq API error {e.response.status_code}: {e.response.text[:1000]}") from e
 
 
     async def complete_json(self, system: str, user: str, max_tokens: int = 2000) -> dict:
@@ -121,6 +145,14 @@ class GroqProvider(LLMProvider):
             raise ValueError("GROQ_API_KEY is not configured")
         if not images:
             raise ValueError("At least one image is required for vision template generation")
+        request_max_tokens = min(max_tokens, GROQ_VISION_MAX_OUTPUT_TOKENS)
+        if request_max_tokens != max_tokens:
+            logger.warning(
+                "GROQ_VISION_MAX_TOKENS_CAPPED requested=%s capped=%s model=%s",
+                max_tokens,
+                request_max_tokens,
+                self.vision_model,
+            )
 
         content: list[dict] = [{"type": "text", "text": user}]
         image_debug = []
@@ -143,6 +175,7 @@ class GroqProvider(LLMProvider):
             "provider": "groq",
             "model": self.vision_model,
             "image_count": len(images),
+            "max_tokens": request_max_tokens,
             "message_count": 2,
             "messages": [
                 {"role": "system", "content_type": "text", "text_length": len(system)},
@@ -177,13 +210,22 @@ class GroqProvider(LLMProvider):
                         {"role": "system", "content": system},
                         {"role": "user", "content": content},
                     ],
-                    "max_tokens": max_tokens,
+                    "max_tokens": request_max_tokens,
                     "temperature": 0.2,
                     "response_format": {"type": "json_object"},
                 },
                 timeout=180,
             )
-            res.raise_for_status()
+            try:
+                res.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.error(
+                    "GROQ_VISION_HTTP_ERROR status=%s model=%s body=%s",
+                    exc.response.status_code,
+                    self.vision_model,
+                    exc.response.text[:2000],
+                )
+                raise ValueError(f"Groq vision API error {exc.response.status_code}: {exc.response.text[:1000]}") from exc
             raw = res.json()["choices"][0]["message"]["content"]
             return parse_json_response(raw)
 

@@ -94,8 +94,11 @@ class GeminiProvider(LLMProvider):
             logger.warning("BLUEPRINT_CONFIDENCE=%s", confidence)
             return result
         except Exception:
-            logger.exception("Gemini vision blueprint generation failed; returning fallback blueprint")
-            fallback = fallback_blueprint()
+            fallback = fallback_html_template() if expects_html_template(system, user) else fallback_blueprint()
+            logger.exception(
+                "Gemini vision generation failed; returning fallback %s",
+                "html_template" if "html" in fallback else "blueprint",
+            )
             logger.warning("BLUEPRINT_CONFIDENCE=%s", _blueprint_confidence(fallback))
             return fallback
 
@@ -305,6 +308,68 @@ def fallback_blueprint() -> dict:
     value = definition.model_dump(mode="json")
     value.setdefault("metadata", {})["blueprint_confidence"] = 0.0
     return value
+
+
+def expects_html_template(system: str, user: str) -> bool:
+    text = f"{system}\n{user}".lower()
+    return '"html"' in text and '"css"' in text and "mapped_fields" in text
+
+
+def fallback_html_template() -> dict:
+    return {
+        "html": (
+            "<div class=\"template-page\">"
+            "<header class=\"hero\"><h1>{{ title }}</h1><p>{{ department }} · {{ location }} · {{ experience }}</p></header>"
+            "<main class=\"content-grid\">"
+            "<section class=\"card summary\"><h2>Job Summary</h2><p>{{ job_summary }}</p></section>"
+            "<section class=\"card\"><h2>Responsibilities</h2>{{ roles_and_responsibilities }}</section>"
+            "<section class=\"card\"><h2>Required Skills</h2>{{ required_skills }}</section>"
+            "<section class=\"card\"><h2>Qualifications</h2>{{ qualifications }}</section>"
+            "<section class=\"card\"><h2>Preferred Skills</h2>{{ preferred_skills }}</section>"
+            "<section class=\"card\"><h2>About Wissen</h2><p>{{ about_company }}</p></section>"
+            "</main>"
+            "<footer>{{ contact_information }}</footer>"
+            "</div>"
+        ),
+        "css": (
+            "@page { size: A4; margin: 36pt; } "
+            "body { font-family: Arial, sans-serif; color: #1A2D58; font-size: 12px; line-height: 1.45; } "
+            ".template-page { display: flex; flex-direction: column; gap: 16px; } "
+            ".hero { background: #0A2246; color: white; padding: 24px; border-radius: 8px; } "
+            ".hero h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.35; } "
+            ".hero p { margin: 0; color: #D8F7FB; } "
+            ".content-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; } "
+            ".summary { grid-column: 1 / -1; } "
+            ".card { border: 1px solid #D9E2F2; border-left: 4px solid #57CFE4; padding: 14px; border-radius: 8px; overflow: visible; } "
+            ".card h2 { margin: 0 0 8px; font-size: 15px; line-height: 1.35; color: #0A2246; } "
+            "ul, ol { margin: 6px 0 0 18px; padding: 0; } "
+            "li { margin-bottom: 4px; } "
+            "footer { border-top: 1px solid #D9E2F2; padding-top: 12px; color: #445377; }"
+        ),
+        "mapped_fields": [
+            "title",
+            "department",
+            "location",
+            "experience",
+            "job_summary",
+            "roles_and_responsibilities",
+            "required_skills",
+            "qualifications",
+            "preferred_skills",
+            "about_company",
+            "contact_information",
+        ],
+        "layout_metadata": {
+            "page_count": 1,
+            "layout_type": "adaptive_review_fallback",
+            "visual_density": "medium",
+            "regions": [
+                {"name": "header", "x_pct": 0, "y_pct": 0, "width_pct": 100, "height_pct": 18},
+                {"name": "main", "x_pct": 0, "y_pct": 18, "width_pct": 100, "height_pct": 72},
+                {"name": "footer", "x_pct": 0, "y_pct": 90, "width_pct": 100, "height_pct": 10},
+            ],
+        },
+    }
 
 
 def _blueprint_confidence(value: dict) -> float | None:

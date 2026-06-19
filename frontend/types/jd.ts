@@ -67,6 +67,8 @@ export interface JDTemplate {
   template_html?: string | null;
   template_css?: string | null;
   mapped_fields?: string[];
+  layout_metadata?: Record<string, unknown> | null;
+  template_quality_score?: Record<string, unknown> | null;
   version?: number;
   prompt?: string | null;
   is_custom: boolean;

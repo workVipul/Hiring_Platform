@@ -14,6 +14,8 @@ class JDTemplate(Base):
     template_html = Column(Text, nullable=True)
     template_css = Column(Text, nullable=True)
     mapped_fields = Column(JSON, nullable=True)
+    layout_metadata = Column(JSON, nullable=True)
+    template_quality_score = Column(JSON, nullable=True)
     version = Column(Integer, default=1, nullable=False)
     prompt = Column(Text, nullable=False)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

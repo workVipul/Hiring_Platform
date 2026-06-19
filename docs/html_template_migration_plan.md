@@ -16,6 +16,7 @@ Add nullable columns to `jd_templates`:
 ALTER TABLE jd_templates ADD COLUMN template_html TEXT;
 ALTER TABLE jd_templates ADD COLUMN template_css TEXT;
 ALTER TABLE jd_templates ADD COLUMN mapped_fields JSON;
+ALTER TABLE jd_templates ADD COLUMN layout_metadata JSON;
 ```
 
 The local dev app also applies these columns at startup in `app.main.ensure_jd_template_module_column()` because this repo does not currently have Alembic configured.
@@ -55,7 +56,9 @@ Gemini vision request
 JSON response: { html, css, mapped_fields }
 HTML/CSS sanitization
 Placeholder validation
-Store template_html/template_css/mapped_fields
+Layout diagnostics render
+Automatic single-page compression if needed
+Store template_html/template_css/mapped_fields/layout_metadata
 ```
 
 Validation rejects:
@@ -74,6 +77,12 @@ TEMPLATE_HTML_LENGTH
 TEMPLATE_CSS_LENGTH
 MAPPED_FIELDS
 HTML_TEMPLATE_STORED
+DETECTED_PAGE_COUNT
+EXPECTED_PAGE_COUNT
+ACTUAL_PAGE_COUNT
+MAJOR_REGIONS_DETECTED
+RENDERED_REGION_COUNT
+LAYOUT_OPTIMIZATION_ATTEMPT
 ```
 
 ## Rendering Pipeline

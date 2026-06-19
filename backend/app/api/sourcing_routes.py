@@ -1,16 +1,20 @@
 import json
+from datetime import timezone
 from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.security import get_access_type, get_current_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.jd import JD
 from app.models.jd_detail import JDDetail
+from app.models.candidate_ownership import CandidateOwnership, CandidateRejection, SLARule
 from app.models.user import User
+from app.services.ownership_service import expire_due_ownerships, utcnow
 from app.services.zoho_service import ZohoRecruitService
 from app.services.ranking_service import CandidateRankingEngine
 from app.services.candidate_filtering import (
@@ -39,6 +43,23 @@ class SourcingRequest(BaseModel):
     relocation_preference: str | None = None
     recency: str | None = None
     good_skills: list[str] | None = None
+
+
+class CandidateRejectionRequest(BaseModel):
+    jd_id: int = Field(ge=1)
+    zoho_candidate_id: str = Field(min_length=1, max_length=100)
+    candidate_name: str = Field(min_length=1, max_length=255)
+    job_opening_id: str | None = Field(default=None, max_length=100)
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+def is_admin_or_manager(user: User, db: Session) -> bool:
+    return get_access_type(user, db) in {"admin", "manager"}
+
+
+def require_admin_or_manager(user: User, db: Session) -> None:
+    if not is_admin_or_manager(user, db):
+        raise HTTPException(status_code=403, detail="Admin or manager access required")
 
 def visible_jd(db: Session, user: User, jd_id: int):
     query = db.query(JD).filter(JD.id == jd_id)
@@ -86,6 +107,78 @@ def combine_locations(*values: str | None) -> list[str]:
         import re
         locations.extend([part.strip() for part in re.split(r"\bor\b|[,|;/]", str(value), flags=re.IGNORECASE) if part.strip()])
     return unique_keep_order(locations)
+
+
+def merge_ownership_data(db: Session, current_user: User, candidates: list[dict]) -> list[dict]:
+    if not candidates:
+        return candidates
+
+    expire_due_ownerships(db)
+    candidate_ids = [str(candidate.get("id")) for candidate in candidates if candidate.get("id")]
+    if not candidate_ids:
+        return candidates
+
+    ownerships = db.query(CandidateOwnership, SLARule).join(
+        SLARule, CandidateOwnership.sla_stage_id == SLARule.id
+    ).filter(
+        CandidateOwnership.zoho_candidate_id.in_(candidate_ids),
+        CandidateOwnership.status == "ACTIVE",
+        CandidateOwnership.expires_at > utcnow(),
+    ).all()
+    ownership_by_candidate = {
+        ownership.zoho_candidate_id: (ownership, rule)
+        for ownership, rule in ownerships
+    }
+
+    enriched = []
+    for candidate in candidates:
+        candidate_id = str(candidate.get("id"))
+        ownership_tuple = ownership_by_candidate.get(candidate_id)
+        if not ownership_tuple:
+            enriched.append({**candidate, "ownership": None})
+            continue
+
+        ownership, rule = ownership_tuple
+        expires_at = ownership.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        remaining_seconds = max(0, int((expires_at - utcnow()).total_seconds()))
+        enriched.append(
+            {
+                **candidate,
+                "ownership": {
+                    "id": ownership.id,
+                    "zoho_candidate_id": ownership.zoho_candidate_id,
+                    "candidate_name": ownership.candidate_name,
+                    "job_opening_id": ownership.job_opening_id,
+                    "owner_recruiter_id": ownership.owner_recruiter_id,
+                    "owner_recruiter_name": ownership.owner_recruiter_name,
+                    "sla_stage_id": ownership.sla_stage_id,
+                    "sla_stage_name": rule.stage_name,
+                    "locked_at": ownership.locked_at.isoformat(),
+                    "expires_at": expires_at.isoformat(),
+                    "status": ownership.status,
+                    "remaining_seconds": remaining_seconds,
+                    "is_locked_by_other": ownership.owner_recruiter_id != current_user.id and remaining_seconds > 0,
+                },
+            }
+        )
+    return enriched
+
+
+def filter_rejected_candidates(db: Session, current_user: User, jd_id: int, candidates: list[dict]) -> list[dict]:
+    candidate_ids = [str(candidate.get("id")) for candidate in candidates if candidate.get("id")]
+    if not candidate_ids:
+        return candidates
+    rejected_ids = {
+        row[0]
+        for row in db.query(CandidateRejection.zoho_candidate_id).filter(
+            CandidateRejection.jd_id == jd_id,
+            CandidateRejection.recruiter_id == current_user.id,
+            CandidateRejection.zoho_candidate_id.in_(candidate_ids),
+        ).all()
+    }
+    return [candidate for candidate in candidates if str(candidate.get("id")) not in rejected_ids]
 
 
 def number_from_unknown(value) -> float | None:
@@ -292,6 +385,7 @@ async def build_candidate_response(
         )
 
     retrieved_count = len(candidates)
+    candidates = filter_rejected_candidates(db, current_user, jd.id, candidates)
     filtered_candidates = deterministic_filter_candidates(candidates, filter_spec) if not all_candidates else candidates
     filter_rejections = summarize_filter_rejections(candidates, filter_spec) if not all_candidates else {}
     deterministic_count = len(filtered_candidates)
@@ -327,6 +421,7 @@ async def build_candidate_response(
     )
     result_limit = min(per_page, settings.SOURCING_RESULT_LIMIT)
     ranked_candidates = ranked_candidates[:result_limit]
+    ranked_candidates = merge_ownership_data(db, current_user, ranked_candidates)
 
     return {
         "jd_id": jd.id,
@@ -424,3 +519,83 @@ async def source_candidates_legacy(
         payload.recency,
         payload.good_skills,
     )
+
+
+@router.post("/candidate-rejections", status_code=201)
+def reject_candidate_for_job(
+    payload: CandidateRejectionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    jd = visible_jd(db, current_user, payload.jd_id)
+    if not jd:
+        raise HTTPException(status_code=404, detail="Job Description not found")
+
+    rejection = CandidateRejection(
+        zoho_candidate_id=payload.zoho_candidate_id,
+        candidate_name=payload.candidate_name,
+        jd_id=payload.jd_id,
+        job_opening_id=payload.job_opening_id,
+        recruiter_id=current_user.id,
+        recruiter_name=current_user.name,
+        reason=payload.reason.strip(),
+    )
+    db.add(rejection)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return {"status": "already_rejected"}
+    return {"status": "rejected"}
+
+
+@router.get("/candidate-rejections")
+def list_candidate_rejections(
+    jd_id: int | None = Query(None, ge=1),
+    recruiter_id: int | None = Query(None, ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_or_manager(current_user, db)
+    query = db.query(CandidateRejection)
+    if jd_id:
+        query = query.filter(CandidateRejection.jd_id == jd_id)
+    if recruiter_id:
+        query = query.filter(CandidateRejection.recruiter_id == recruiter_id)
+
+    rows = query.order_by(CandidateRejection.rejected_at.desc()).all()
+    jd_ids = {row.jd_id for row in rows}
+    jd_titles = {
+        jd.id: jd.title
+        for jd in db.query(JD).filter(JD.id.in_(jd_ids)).all()
+    } if jd_ids else {}
+    return [
+        {
+            "id": row.id,
+            "zoho_candidate_id": row.zoho_candidate_id,
+            "candidate_name": row.candidate_name,
+            "jd_id": row.jd_id,
+            "jd_title": jd_titles.get(row.jd_id, f"JD #{row.jd_id}"),
+            "job_opening_id": row.job_opening_id,
+            "recruiter_id": row.recruiter_id,
+            "recruiter_name": row.recruiter_name,
+            "reason": row.reason,
+            "rejected_at": row.rejected_at,
+        }
+        for row in rows
+    ]
+
+
+@router.delete("/candidate-rejections/{rejection_id}", status_code=204)
+def restore_candidate_rejection(
+    rejection_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    require_admin_or_manager(current_user, db)
+    rejection = db.get(CandidateRejection, rejection_id)
+    if not rejection:
+        raise HTTPException(status_code=404, detail="Rejected candidate record not found")
+    db.delete(rejection)
+    db.commit()
+    return None

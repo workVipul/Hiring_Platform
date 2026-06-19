@@ -32,6 +32,19 @@ async function req<T>(path: string, opts?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type CandidateRejection = {
+  id: number;
+  zoho_candidate_id: string;
+  candidate_name: string;
+  jd_id: number;
+  jd_title: string;
+  job_opening_id: string | null;
+  recruiter_id: number;
+  recruiter_name: string;
+  reason: string;
+  rejected_at: string;
+};
+
 export const jdApi = {
   list: (page?: number, perPage?: number): Promise<JDListResponse> => {
     const params = new URLSearchParams();
@@ -146,5 +159,25 @@ export const jdApi = {
     if (filters?.goodSkills?.length) params.set("good_skills", filters.goodSkills.join(","));
     return req(`/api/v1/sourcing/candidates?${params.toString()}`);
   },
+  rejectCandidate: (payload: {
+    jd_id: number;
+    zoho_candidate_id: string;
+    candidate_name: string;
+    job_opening_id?: string | null;
+    reason: string;
+  }): Promise<{ status: string }> =>
+    req("/api/v1/sourcing/candidate-rejections", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listCandidateRejections: (filters?: { jdId?: number; recruiterId?: number }): Promise<CandidateRejection[]> => {
+    const params = new URLSearchParams();
+    if (filters?.jdId) params.set("jd_id", String(filters.jdId));
+    if (filters?.recruiterId) params.set("recruiter_id", String(filters.recruiterId));
+    const query = params.toString();
+    return req(`/api/v1/sourcing/candidate-rejections${query ? `?${query}` : ""}`);
+  },
+  restoreCandidateRejection: (rejectionId: number): Promise<void> =>
+    req(`/api/v1/sourcing/candidate-rejections/${rejectionId}`, { method: "DELETE" }),
   delete: (id: number): Promise<void> => req(`/api/v1/jds/${id}`, { method: "DELETE" }),
 };
