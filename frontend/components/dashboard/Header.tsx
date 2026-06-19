@@ -49,7 +49,7 @@ export default function Header() {
             className="site-header-logo"
           />
           <div style={{ display: "flex", alignItems: "center", gap: "8px", borderLeft: "1px solid var(--border)", paddingLeft: "12px", marginLeft: "4px" }}>
-            <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--color-navy-dark)", letterSpacing: "-0.02em" }}>NinjaForge</span>
+            <span style={{ fontSize: "1.15rem", fontWeight: 800, color: "var(--color-navy-dark)", letterSpacing: "-0.02em" }}>RecruitNinja</span>
           </div>
         </Link>
 

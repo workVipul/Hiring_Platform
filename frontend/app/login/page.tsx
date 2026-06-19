@@ -60,7 +60,7 @@ export default function LoginPage() {
           <div className="auth-banner-brand">
             <img src="/wissen_logo.png" alt="Wissen Technology Logo" className="auth-banner-logo" />
             <div className="auth-banner-divider"></div>
-            <span className="auth-banner-title">NinjaForge</span>
+            <span className="auth-banner-title">RecruitNinja</span>
           </div>
           
           <div className="auth-banner-hero">
@@ -79,7 +79,7 @@ export default function LoginPage() {
         <div className="auth-panel-wrapper">
           <div className="auth-panel-header">
             <h1>{mode === "login" ? "Sign in" : "Create account"}</h1>
-            <p className="muted">Enter your details to access the NinjaForge portal.</p>
+            <p className="muted">Enter your details to access the RecruitNinja portal.</p>
           </div>
 
           <div className="segmented">

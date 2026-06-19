@@ -48,7 +48,7 @@ export const useAuthStore = create<AuthState>()(
         }),
     }),
     {
-      name: "ninjaforge-auth",
+      name: "recruitninja-auth",
       partialize: (state) => ({
         token: state.token,
         userId: state.userId,

@@ -22,7 +22,7 @@ from app.api.sourcing_routes import router as sourcing_router
 
 
 app = FastAPI(
-    title="NinjaForge API",
+    title="RecruitNinja API",
     description="AI-powered hiring platform",
     version="0.2.0",
 )
