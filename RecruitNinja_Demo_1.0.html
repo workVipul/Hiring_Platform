@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RecruitNinja — Executive Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Domine:wght@500;600;700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: oklch(96% 0.009 90);
+    --paper-2: oklch(93% 0.011 90);
+    --paper-3: oklch(89% 0.013 90);
+    --ink: oklch(21% 0.022 280);
+    --ink-soft: oklch(45% 0.018 280);
+    --ink-faint: oklch(63% 0.014 280);
+    --line: oklch(83% 0.012 90);
+
+    --accent: oklch(46% 0.15 18);
+    --accent-deep: oklch(33% 0.13 18);
+    --accent-bright: oklch(58% 0.17 18);
+    --accent-soft: oklch(92% 0.045 18);
+
+    --gold: oklch(74% 0.10 80);
+
+    --dark-bg: oklch(19% 0.02 280);
+    --dark-bg-2: oklch(15% 0.018 280);
+    --dark-line: oklch(30% 0.022 280);
+    --dark-text: oklch(94% 0.01 90);
+    --dark-text-soft: oklch(70% 0.018 280);
+  }
+
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ height:100%; }
+  body{
+    font-family:'Public Sans', sans-serif;
+    background: var(--paper); color: var(--ink);
+    overflow:hidden; -webkit-font-smoothing:antialiased;
+    transition: background .5s;
+  }
+  body.on-dark{ background: var(--dark-bg); }
+
+  h1,h2,h3,.serif{ font-family:'Domine', serif; letter-spacing:-0.01em; }
+
+  .deck{ position:relative; width:100vw; height:100vh; }
+
+  .slide{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; justify-content:center;
+    padding: clamp(2.2rem,4.4vw,5.2rem) clamp(2.8rem,7.5vw,8rem);
+    opacity:0; visibility:hidden;
+    transition: opacity .5s cubic-bezier(.16,1,.3,1);
+  }
+  .slide.active{ opacity:1; visibility:visible; }
+  .slide.dark{ background: var(--dark-bg); color: var(--dark-text); }
+
+  .reveal{ opacity:0; transform: translateY(16px); transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1); }
+  .slide.active .reveal{ opacity:1; transform:translateY(0); }
+  .r1{transition-delay:.05s;} .r2{transition-delay:.14s;} .r3{transition-delay:.23s;}
+  .r4{transition-delay:.32s;} .r5{transition-delay:.41s;} .r6{transition-delay:.5s;}
+
+  .kicker{ font-size:0.76rem; font-weight:700; letter-spacing:0.13em; text-transform:uppercase; color: var(--accent-deep); margin-bottom:0.85rem; }
+  .dark .kicker{ color: oklch(72% 0.13 18); }
+
+  .headline{ font-size: clamp(1.9rem,3.9vw,3.35rem); font-weight:700; line-height:1.1; max-width:20ch; color:var(--ink); }
+  .dark .headline{ color:var(--dark-text); }
+
+  .lede{ font-size: clamp(0.98rem,1.15vw,1.14rem); color:var(--ink-soft); max-width:62ch; line-height:1.6; }
+  .dark .lede{ color: var(--dark-text-soft); }
+
+  .brandmark{ position:fixed; top:clamp(1.4rem,3vw,2.3rem); left:clamp(1.4rem,3vw,2.3rem); font-family:'Domine',serif; font-weight:700; font-size:0.92rem; color:var(--ink); z-index:30; display:flex; align-items:center; gap:0.5rem; transition:color .4s; }
+  .brandmark .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); }
+  body.on-dark .brandmark{ color:var(--dark-text); }
+
+  .foot-index{ position:fixed; top:clamp(1.4rem,3vw,2.3rem); right:clamp(1.4rem,3vw,2.3rem); font-size:0.76rem; color:var(--ink-faint); font-weight:600; font-variant-numeric:tabular-nums; z-index:30; transition:color .4s; }
+  .foot-index span{ color:var(--ink); }
+  body.on-dark .foot-index{ color: var(--dark-text-soft); }
+  body.on-dark .foot-index span{ color: var(--dark-text); }
+
+  .progress-track{ position:fixed; top:0; left:0; height:2.5px; width:100%; background:var(--line); z-index:31; transition:background .4s; }
+  .progress-fill{ height:100%; background:var(--accent); transition: width .5s cubic-bezier(.16,1,.3,1); }
+  body.on-dark .progress-track{ background: var(--dark-line); }
+
+  .nav-controls{ position:fixed; bottom:clamp(1.3rem,2.6vw,2.1rem); left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:1.3rem; z-index:30; }
+  .nav-btn{ width:36px; height:36px; border-radius:50%; border:1.5px solid var(--line); background:var(--paper); color:var(--ink); display:flex; align-items:center; justify-content:center; cursor:pointer; transition:.25s; }
+  .nav-btn:hover{ border-color:var(--accent); background:var(--accent-soft); }
+  .nav-btn svg{ width:14px; height:14px; }
+  body.on-dark .nav-btn{ border-color:var(--dark-line); background:var(--dark-bg); color:var(--dark-text); }
+  body.on-dark .nav-btn:hover{ border-color: oklch(72% 0.13 18); background: var(--dark-bg-2); }
+
+  .dots{ display:flex; gap:0.45rem; }
+  .dot-btn{ width:6px; height:6px; border-radius:50%; background:var(--line); border:none; cursor:pointer; transition:.3s; padding:0; }
+  .dot-btn.on{ width:20px; border-radius:4px; background:var(--accent); }
+  body.on-dark .dot-btn{ background:var(--dark-line); }
+  body.on-dark .dot-btn.on{ background: oklch(72% 0.13 18); }
+
+  .notes-panel{
+    position:fixed; bottom:0; left:0; right:0; max-height:38vh; overflow:auto;
+    background: var(--dark-bg-2); color: var(--dark-text); border-top:1px solid var(--dark-line);
+    padding: 1.4rem clamp(2rem,6vw,6rem); z-index:40; transform:translateY(100%); transition: transform .4s cubic-bezier(.16,1,.3,1);
+    font-size:0.94rem; line-height:1.6;
+  }
+  .notes-panel.open{ transform:translateY(0); }
+  .notes-panel .n-label{ font-size:0.7rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color: oklch(72% 0.13 18); margin-bottom:0.5rem; }
+  .notes-hint{ position:fixed; bottom:clamp(1.3rem,2.6vw,2.1rem); right:clamp(1.4rem,3vw,2.3rem); font-size:0.72rem; color:var(--ink-faint); z-index:30; transition:color .4s; }
+  body.on-dark .notes-hint{ color: var(--dark-text-soft); }
+
+  strong{ font-weight:700; color:var(--ink); } .dark strong{ color:var(--dark-text); }
+
+  /* ============ S1 : TITLE ============ */
+  #s1{ position:relative; }
+  #s1 .arc{ position:absolute; border-radius:50%; border:1px solid var(--line); }
+  #s1 .a1{ width:640px; height:640px; top:-220px; right:-220px; }
+  #s1 .a2{ width:420px; height:420px; top:-100px; right:-100px; border-color: var(--accent-soft); }
+  #s1 .a3{ width:210px; height:210px; top:20px; right:20px; background:var(--accent); border:none; }
+  #s1 .content{ position:relative; z-index:1; max-width:44rem; }
+  #s1 .brand-lockup{ font-family:'Domine',serif; font-weight:700; font-size:1.5rem; color:var(--accent-deep); margin-bottom:1.1rem; display:flex; align-items:baseline; gap:0.85rem; flex-wrap:wrap; }
+  #s1 .brand-lockup .tagline{ font-family:'Public Sans',sans-serif; font-weight:500; font-size:0.85rem; color:var(--ink-faint); letter-spacing:0.01em; }
+  #s1 .headline{ font-size: clamp(2.6rem,5.6vw,4.6rem); max-width:15ch; margin-bottom:1.3rem; }
+  #s1 .meta-row{ margin-top:2.6rem; display:flex; gap:2.6rem; }
+  #s1 .meta-row .m-label{ font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-faint); margin-bottom:0.3rem; }
+  #s1 .meta-row .m-val{ font-size:0.95rem; font-weight:600; }
+
+  /* ============ S2 : CHALLENGES ============ */
+  #s2 .rows{ margin-top:clamp(1.8rem,3.5vw,2.8rem); border-top:1px solid var(--line); }
+  #s2 .row{ display:grid; grid-template-columns:2.4rem 1.5fr 1fr; gap:1.6rem; padding:1.15rem 0; border-bottom:1px solid var(--line); align-items:baseline; }
+  #s2 .row .rn{ font-family:'Domine',serif; font-weight:700; color:var(--accent-deep); font-size:1.05rem; }
+  #s2 .row .rt{ font-weight:600; font-size:1.02rem; }
+  #s2 .row .ri{ font-size:0.88rem; color:var(--ink-soft); }
+  #s2 .row .ri b{ color: var(--accent-deep); font-weight:700; }
+
+  /* ============ S3 : VISION (dark) ============ */
+  #s3.slide{ align-items:flex-start; }
+  #s3 .headline{ font-size: clamp(2.3rem,5vw,4rem); max-width:16ch; }
+  #s3 .lede{ margin-top:1.5rem; }
+  #s3 .vision-tags{ margin-top:2.6rem; display:flex; gap:0.9rem; flex-wrap:wrap; }
+  #s3 .vtag{ border:1px solid var(--dark-line); padding:0.5rem 1.05rem; border-radius:100px; font-size:0.85rem; color:var(--dark-text-soft); }
+
+  /* ============ S4 : PRODUCT OVERVIEW ============ */
+  #s4 .modules{ margin-top:clamp(2rem,4vw,3rem); display:grid; grid-template-columns: 1.15fr 1fr 1fr; gap:0; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  #s4 .mod{ padding: 1.8rem 1.8rem 1.8rem 0; border-right:1px solid var(--line); }
+  #s4 .mod:last-child{ border-right:none; padding-right:0; }
+  #s4 .mod:not(:first-child){ padding-left:1.8rem; }
+  #s4 .mod .mn{ font-size:0.78rem; font-weight:700; color:var(--accent-deep); margin-bottom:0.7rem; }
+  #s4 .mod .mt{ font-family:'Domine',serif; font-weight:700; font-size:1.28rem; margin-bottom:0.65rem; }
+  #s4 .mod .md{ font-size:0.9rem; color:var(--ink-soft); line-height:1.55; }
+  #s4 .backbone{ margin-top:1.6rem; font-size:0.9rem; color:var(--ink-soft); }
+
+  /* ============ S5 : WORKFLOW ============ */
+  #s5 .flow{ margin-top: clamp(2.4rem,4.5vw,3.6rem); }
+  #s5 .track{ display:flex; align-items:center; }
+  #s5 .node{ width:12px; height:12px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+  #s5 .node.alt{ background:var(--ink); }
+  #s5 .seg{ flex:1; height:1.5px; background:var(--line); }
+  #s5 .labels{ margin-top:1.3rem; display:grid; grid-template-columns:repeat(8,1fr); gap:0.6rem; }
+  #s5 .labels .lab{ font-size:0.82rem; }
+  #s5 .labels .lab .lt{ font-weight:700; display:block; margin-bottom:0.25rem; }
+  #s5 .labels .lab .ld{ color:var(--ink-soft); font-size:0.76rem; line-height:1.4; }
+
+  /* ============ S6 : JD GENERATION ============ */
+  #s6 .cols{ margin-top:clamp(2rem,4vw,3rem); display:grid; grid-template-columns:1fr 1fr 0.8fr; gap:clamp(2rem,4vw,3.5rem); }
+  #s6 .col-title{ font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-faint); margin-bottom:1.1rem; }
+  #s6 .pill-list{ display:flex; flex-direction:column; gap:0.65rem; }
+  #s6 .pill{ font-size:0.92rem; padding:0.55rem 0; border-bottom:1px solid var(--line); }
+  #s6 .pill.admin{ color:var(--accent-deep); font-weight:600; }
+  #s6 .benefit{ margin-bottom:1.3rem; }
+  #s6 .benefit .b-t{ font-weight:700; font-size:0.98rem; margin-bottom:0.25rem; }
+  #s6 .benefit .b-d{ font-size:0.86rem; color:var(--ink-soft); line-height:1.5; }
+
+  /* ============ S7 : SOURCING ============ */
+  #s7 .wrap{ margin-top:clamp(2rem,4vw,3rem); display:grid; grid-template-columns:0.85fr 1.15fr; gap:clamp(3rem,6vw,5rem); align-items:center; }
+  #s7 .steps-v{ display:flex; flex-direction:column; gap:1.3rem; }
+  #s7 .step-v{ display:flex; gap:1rem; align-items:baseline; }
+  #s7 .step-v .sv-n{ font-family:'Domine',serif; font-weight:700; color:var(--accent-deep); font-size:0.95rem; }
+  #s7 .step-v .sv-t{ font-weight:600; font-size:0.98rem; }
+  #s7 .fitcard{ background:var(--ink); color:var(--paper); border-radius:10px; padding:1.8rem 2rem; }
+  #s7 .fitcard .fn{ font-family:'Domine',serif; font-weight:700; font-size:3rem; color:var(--gold); line-height:1; }
+  #s7 .fitcard .fl{ font-size:0.9rem; margin:0.5rem 0 1.2rem; color: oklch(85% 0.01 90); }
+  #s7 .rank-row{ display:grid; grid-template-columns:6rem 1fr 3rem; gap:0.9rem; align-items:center; margin-bottom:0.75rem; }
+  #s7 .rank-name{ font-size:0.82rem; color: oklch(80% 0.01 90); }
+  #s7 .rank-track{ height:7px; background: oklch(30% 0.015 280); border-radius:4px; overflow:hidden; }
+  #s7 .rank-fill{ height:100%; background:var(--gold); border-radius:4px; }
+  #s7 .rank-pct{ font-size:0.85rem; font-weight:700; text-align:right; }
+  #s7 .actions-row{ margin-top:1.6rem; display:flex; gap:1.6rem; font-size:0.85rem; color:var(--ink-soft); }
+  #s7 .actions-row b{ color:var(--ink); }
+
+  /* ============ S8 : AI CAPABILITIES ============ */
+  #s8 .caps{ margin-top:clamp(2rem,4vw,3rem); display:grid; grid-template-columns:repeat(3,1fr); gap: 2.4rem clamp(2rem,3.5vw,3rem); }
+  #s8 .cap .c-n{ font-family:'Domine',serif; font-weight:700; color:var(--accent-deep); font-size:0.9rem; margin-bottom:0.5rem; }
+  #s8 .cap .c-t{ font-weight:700; font-size:1.02rem; margin-bottom:0.4rem; }
+  #s8 .cap .c-d{ font-size:0.86rem; color:var(--ink-soft); line-height:1.5; }
+
+  /* ============ S9 : ADMIN ============ */
+  #s9 .gov{ margin-top:clamp(2.2rem,4.5vw,3.5rem); display:grid; grid-template-columns:1fr 1fr; gap:clamp(3rem,6vw,6rem); }
+  #s9 .gnum{ font-family:'Domine',serif; color:var(--accent-deep); font-weight:700; margin-bottom:0.9rem; }
+  #s9 .gt{ font-family:'Domine',serif; font-weight:700; font-size:1.4rem; margin-bottom:0.8rem; }
+  #s9 .gd{ font-size:0.95rem; color:var(--ink-soft); line-height:1.6; max-width:38ch; }
+
+  /* ============ S10 : BENEFITS + ROI ============ */
+  #s10 .kpi-row{ margin-top:clamp(2rem,4vw,3rem); display:grid; grid-template-columns:repeat(4,1fr); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  #s10 .kpi{ padding:1.5rem 1.4rem 1.5rem 0; border-right:1px solid var(--line); }
+  #s10 .kpi:last-child{ border-right:none; }
+  #s10 .kpi:not(:first-child){ padding-left:1.4rem; }
+  #s10 .kpi .kv{ font-family:'Domine',serif; font-weight:700; font-size:clamp(1.8rem,3vw,2.4rem); color:var(--accent-deep); line-height:1; }
+  #s10 .kpi .kl{ font-size:0.82rem; color:var(--ink-soft); margin-top:0.55rem; line-height:1.4; }
+  #s10 .roi-note{ margin-top:1.5rem; font-size:0.82rem; color:var(--ink-faint); max-width:70ch; }
+
+  /* ============ S11 : COMPARISON ============ */
+  #s11 table{ margin-top:clamp(1.8rem,3.5vw,2.6rem); width:100%; border-collapse:collapse; font-size:0.87rem; }
+  #s11 th{ text-align:left; font-weight:600; color:var(--ink-faint); font-size:0.76rem; text-transform:uppercase; letter-spacing:0.04em; padding:0 0.8rem 0.7rem 0; border-bottom:1px solid var(--line); }
+  #s11 th:first-child{ padding-left:0; }
+  #s11 td{ padding:0.75rem 0.8rem 0.75rem 0; border-bottom:1px solid var(--line); }
+  #s11 td:first-child{ font-weight:600; padding-left:0; }
+  #s11 td.center, #s11 th.center{ text-align:center; }
+  #s11 tr:hover td{ background: var(--paper-2); }
+  #s11 .yes{ color: var(--accent-deep); font-weight:700; }
+  #s11 .partial{ color: var(--ink-faint); }
+  #s11 .rn-col{ color: var(--accent-deep); font-weight:700; }
+  #s11 .disclaimer{ margin-top:1.1rem; font-size:0.78rem; color:var(--ink-faint); }
+
+  /* ============ S12 : ROADMAP ============ */
+  #s12 .waves{ margin-top:clamp(2rem,4vw,3.2rem); display:flex; flex-direction:column; gap:1.7rem; }
+  #s12 .wave .wt{ font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:0.75rem; }
+  #s12 .wave.now .wt{ color: var(--accent-deep); }
+  #s12 .wave.next .wt{ color: var(--ink-soft); }
+  #s12 .wave.later .wt{ color: var(--ink-faint); }
+  #s12 .chips{ display:flex; flex-wrap:wrap; gap:0.6rem; }
+  #s12 .chip{ font-size:0.84rem; padding:0.42rem 0.9rem; border-radius:100px; border:1px solid var(--line); }
+  #s12 .wave.now .chip{ border-color: var(--accent-soft); background: var(--accent-soft); color: var(--accent-deep); font-weight:600; }
+
+  #s13 .arc{ position:absolute; border-radius:50%; border:1px solid var(--dark-line); }
+  #s13 .a1{ width:640px; height:640px; bottom:-260px; right:-220px; }
+  #s13 .a2{ width:420px; height:420px; bottom:-140px; right:-100px; border-color: oklch(30% 0.05 18); }
+  #s13 .a3{ width:190px; height:190px; bottom:-10px; right:20px; background: var(--accent); border:none; opacity:0.85; }
+  #s13 .content{ position:relative; z-index:1; }
+  #s13 .close-line{ font-size: clamp(1.7rem,3.4vw,2.7rem); max-width:19ch; line-height:1.22; color:var(--dark-text); }
+  #s13 .sub-line{ margin-top:1.5rem; font-size:1.02rem; color: var(--dark-text-soft); max-width:52ch; line-height:1.6; }
+  #s13 .vision-tags{ margin-top:2.4rem; display:flex; gap:0.8rem; flex-wrap:wrap; }
+  #s13 .vtag{ border:1px solid var(--dark-line); padding:0.5rem 1.05rem; border-radius:100px; font-size:0.85rem; color:var(--dark-text-soft); }
+  #s13 .final-line{ margin-top: clamp(2.4rem,4.5vw,3.6rem); font-size:1rem; color: var(--dark-text-soft); }
+
+  @media (max-width: 900px){
+    #s4 .modules{ grid-template-columns:1fr; }
+    #s4 .mod{ border-right:none; border-bottom:1px solid var(--line); padding:1.4rem 0 !important; }
+    #s5 .labels{ grid-template-columns:repeat(4,1fr); row-gap:1.2rem; }
+    #s6 .cols{ grid-template-columns:1fr; }
+    #s7 .wrap{ grid-template-columns:1fr; }
+    #s8 .caps{ grid-template-columns:1fr 1fr; }
+    #s9 .gov{ grid-template-columns:1fr; }
+    #s10 .kpi-row{ grid-template-columns:1fr 1fr; }
+    #s10 .kpi{ border-right:none !important; border-bottom:1px solid var(--line); padding:1.2rem 0 !important; }
+    #s11 table{ font-size:0.74rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+<div class="brandmark"><span class="dot"></span>RecruitNinja</div>
+<div class="foot-index"><span id="idxCurrent">01</span> / <span id="idxTotal">13</span></div>
+<div class="notes-hint">Press N for notes</div>
+
+<div class="deck" id="deck">
+
+  <!-- 1. TITLE -->
+  <section class="slide active" id="s1">
+    <div class="arc a1"></div><div class="arc a2"></div><div class="arc a3"></div>
+    <div class="content">
+      <div class="kicker reveal r1">Executive Review &middot; From POC to Product</div>
+      <div class="brand-lockup reveal r2">RecruitNinja<span class="tagline">Next-Gen Job Sourcing &amp; Candidate Matching</span></div>
+      <h1 class="headline reveal r3">The future of intelligent hiring.</h1>
+      <p class="lede reveal r4">A single AI platform that writes job descriptions and shortlists candidates directly against Zoho Recruit, built and tested inside our own Talent Acquisition team.</p>
+      <div class="meta-row reveal r5">
+        <div><div class="m-label">Presented to</div><div class="m-val">Managing Director &amp; Leadership</div></div>
+        <div><div class="m-label">Stage</div><div class="m-val">Proof of Concept &rarr; Product Approval</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. CURRENT CHALLENGES -->
+  <section class="slide" id="s2">
+    <div class="kicker reveal r1">Where we are today</div>
+    <h2 class="headline reveal r2" style="max-width:22ch;">Hiring is slower than it needs to be.</h2>
+    <div class="rows reveal r3">
+      <div class="row">
+        <div class="rn">01</div>
+        <div class="rt">Job descriptions are written by hand, one at a time</div>
+        <div class="ri">Takes about <b>a full day</b> per role, with quality varying by recruiter</div>
+      </div>
+      <div class="row">
+        <div class="rn">02</div>
+        <div class="rt">Candidates are screened manually against Zoho Recruit</div>
+        <div class="ri">Another <b>full day</b> per role, reviewed profile by profile</div>
+      </div>
+      <div class="row">
+        <div class="rn">03</div>
+        <div class="rt">Shortlists depend on individual judgement</div>
+        <div class="ri">No consistent, defensible way to compare candidates</div>
+      </div>
+      <div class="row">
+        <div class="rn">04</div>
+        <div class="rt">Slow turnaround affects delivery commitments</div>
+        <div class="ri">Client and project timelines absorb the delay</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. VISION -->
+  <section class="slide dark" id="s3">
+    <div class="kicker reveal r1">Our vision</div>
+    <h2 class="headline reveal r2">One AI platform.<br>Every hiring step, connected.</h2>
+    <p class="lede reveal r3">From the moment a requirement lands to the moment a shortlist is ready, without switching tools, re-entering data, or waiting on manual work.</p>
+    <div class="vision-tags reveal r4">
+      <div class="vtag">Faster</div>
+      <div class="vtag">Consistent</div>
+      <div class="vtag">Built on Zoho Recruit</div>
+      <div class="vtag">Ready to scale</div>
+    </div>
+  </section>
+
+  <!-- 4. PRODUCT OVERVIEW -->
+  <section class="slide" id="s4">
+    <div class="kicker reveal r1">Product overview</div>
+    <h2 class="headline reveal r2" style="max-width:22ch;">Three capabilities, one workflow.</h2>
+    <div class="modules reveal r3">
+      <div class="mod">
+        <div class="mn">MODULE 01</div>
+        <div class="mt">JD Generation</div>
+        <div class="md">Turns a brief, a call, or a chat into a complete, on-brand job description in minutes.</div>
+      </div>
+      <div class="mod">
+        <div class="mn">MODULE 02</div>
+        <div class="mt">Candidate Sourcing</div>
+        <div class="md">Scores and ranks every candidate in Zoho Recruit against the published JD.</div>
+      </div>
+      <div class="mod">
+        <div class="mn">MODULE 03</div>
+        <div class="mt">Admin &amp; SLA Control</div>
+        <div class="md">Keeps templates, formats and turnaround times consistent and configurable.</div>
+      </div>
+    </div>
+    <p class="backbone reveal r4">All three run on top of Zoho Recruit, our existing system of record, rather than replacing it.</p>
+  </section>
+
+  <!-- 5. LIVE WORKFLOW -->
+  <section class="slide" id="s5">
+    <div class="kicker reveal r1">Live workflow</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">From requirement to pipeline, in one pass.</h2>
+    <div class="flow reveal r3">
+      <div class="track">
+        <div class="node"></div><div class="seg"></div>
+        <div class="node alt"></div><div class="seg"></div>
+        <div class="node"></div><div class="seg"></div>
+        <div class="node alt"></div><div class="seg"></div>
+        <div class="node"></div><div class="seg"></div>
+        <div class="node alt"></div><div class="seg"></div>
+        <div class="node"></div><div class="seg"></div>
+        <div class="node alt"></div>
+      </div>
+      <div class="labels">
+        <div class="lab"><span class="lt">Requirement</span><span class="ld">Client need is logged</span></div>
+        <div class="lab"><span class="lt">JD Generation</span><span class="ld">Draft created, ~2 min</span></div>
+        <div class="lab"><span class="lt">Review</span><span class="ld">Refined with AI assistance</span></div>
+        <div class="lab"><span class="lt">Publish</span><span class="ld">One click, ready to source</span></div>
+        <div class="lab"><span class="lt">AI Matching</span><span class="ld">Zoho pool scored, ~4 min</span></div>
+        <div class="lab"><span class="lt">Ranking</span><span class="ld">Ordered by fit score</span></div>
+        <div class="lab"><span class="lt">Shortlisting</span><span class="ld">Recruiter decides</span></div>
+        <div class="lab"><span class="lt">Next Stage</span><span class="ld">Enters the pipeline</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. JD GENERATION -->
+  <section class="slide" id="s6">
+    <div class="kicker reveal r1">Module 01</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">JD Generation</h2>
+    <div class="cols reveal r3">
+      <div>
+        <div class="col-title">Inputs</div>
+        <div class="pill-list">
+          <div class="pill">Text brief</div>
+          <div class="pill">Voice note</div>
+          <div class="pill">Teams recording</div>
+          <div class="pill">Guided chat, six pointers</div>
+          <div class="pill admin">Admin templates</div>
+        </div>
+      </div>
+      <div>
+        <div class="col-title">What gets generated</div>
+        <div class="pill-list">
+          <div class="pill">Company details, auto-added</div>
+          <div class="pill">Responsibilities &amp; project details</div>
+          <div class="pill">Mandatory &amp; preferred skills</div>
+          <div class="pill">Experience &amp; notice period</div>
+          <div class="pill">Hiring location</div>
+        </div>
+      </div>
+      <div>
+        <div class="col-title">Why it matters</div>
+        <div class="benefit"><div class="b-t">Minutes, not a day</div><div class="b-d">One draft is ready almost immediately.</div></div>
+        <div class="benefit"><div class="b-t">Consistent quality</div><div class="b-d">Every JD follows the same standard.</div></div>
+        <div class="benefit"><div class="b-t">Easy to adjust</div><div class="b-d">Ask in plain language: reduce experience, make it more senior, change the tone.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. CANDIDATE SOURCING -->
+  <section class="slide" id="s7">
+    <div class="kicker reveal r1">Module 02</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">Candidate Sourcing</h2>
+    <div class="wrap reveal r3">
+      <div>
+        <div class="steps-v">
+          <div class="step-v"><div class="sv-n">01</div><div class="sv-t">Reads the uploaded or published JD</div></div>
+          <div class="step-v"><div class="sv-n">02</div><div class="sv-t">Fetches candidates from Zoho Recruit</div></div>
+          <div class="step-v"><div class="sv-n">03</div><div class="sv-t">Runs AI fit analysis, about 20 parameters</div></div>
+          <div class="step-v"><div class="sv-n">04</div><div class="sv-t">Ranks by skill and experience match</div></div>
+        </div>
+        <div class="actions-row"><span><b>Reject</b></span><span><b>Shortlist</b></span><span><b>Next stage</b></span></div>
+      </div>
+      <div class="fitcard">
+        <div class="fn">20</div>
+        <div class="fl">parameters evaluated per candidate</div>
+        <div class="rank-row"><div class="rank-name">Candidate A</div><div class="rank-track"><div class="rank-fill" style="width:92%;"></div></div><div class="rank-pct">92%</div></div>
+        <div class="rank-row"><div class="rank-name">Candidate B</div><div class="rank-track"><div class="rank-fill" style="width:85%;"></div></div><div class="rank-pct">85%</div></div>
+        <div class="rank-row"><div class="rank-name">Candidate C</div><div class="rank-track"><div class="rank-fill" style="width:74%;"></div></div><div class="rank-pct">74%</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. AI CAPABILITIES -->
+  <section class="slide" id="s8">
+    <div class="kicker reveal r1">Under the hood, in plain terms</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">What the AI is actually doing.</h2>
+    <div class="caps reveal r3">
+      <div class="cap"><div class="c-n">01</div><div class="c-t">Voice understanding</div><div class="c-d">Turns a spoken requirement into a structured brief.</div></div>
+      <div class="cap"><div class="c-n">02</div><div class="c-t">Conversational input</div><div class="c-d">A short guided chat fills in whatever is missing.</div></div>
+      <div class="cap"><div class="c-n">03</div><div class="c-t">Resume intelligence</div><div class="c-d">Reads and interprets candidate profiles automatically.</div></div>
+      <div class="cap"><div class="c-n">04</div><div class="c-t">Smart ranking</div><div class="c-d">Scores and orders candidates the same way, every time.</div></div>
+      <div class="cap"><div class="c-n">05</div><div class="c-t">Company context</div><div class="c-d">Applies our branding and standards without manual input.</div></div>
+      <div class="cap"><div class="c-n">06</div><div class="c-t">Guided AI instructions</div><div class="c-d">Recruiters ask for changes in plain language, no training needed.</div></div>
+    </div>
+  </section>
+
+  <!-- 9. ADMIN FEATURES -->
+  <section class="slide" id="s9">
+    <div class="kicker reveal r1">Module 03</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">Admin &amp; SLA Control</h2>
+    <div class="gov reveal r3">
+      <div>
+        <div class="gnum">01</div>
+        <div class="gt">Templates</div>
+        <div class="gd">Admins upload and lock the JD format, so every job description follows the same structure and tone across the organisation.</div>
+      </div>
+      <div>
+        <div class="gnum">02</div>
+        <div class="gt">SLA Management</div>
+        <div class="gd">Every recruitment stage has an editable turnaround time, with escalation built in for future monitoring.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10. BENEFITS + ROI -->
+  <section class="slide" id="s10">
+    <div class="kicker reveal r1">Business benefits</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">What this is worth, in numbers.</h2>
+    <div class="kpi-row reveal r3">
+      <div class="kpi"><div class="kv">~90%</div><div class="kl">faster job description drafting</div></div>
+      <div class="kpi"><div class="kv">~90%</div><div class="kl">faster candidate shortlisting</div></div>
+      <div class="kpi"><div class="kv">2&ndash;3x</div><div class="kl">more requisitions per recruiter</div></div>
+      <div class="kpi"><div class="kv">20&ndash;30%</div><div class="kl">potential reduction in cost per hire</div></div>
+    </div>
+    <p class="roi-note reveal r4">Estimates based on common hiring-industry benchmarks and timings observed during the POC. To be confirmed with real figures during a pilot with the wider TA team.</p>
+  </section>
+
+  <!-- 11. COMPETITIVE COMPARISON -->
+  <section class="slide" id="s11">
+    <div class="kicker reveal r1">How we compare</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">Built for how we already hire.</h2>
+    <div class="reveal r3">
+      <table>
+        <tr>
+          <th>Capability</th>
+          <th class="center rn-col">RecruitNinja</th>
+          <th class="center">Zoho<br>Recruit</th>
+          <th class="center">LinkedIn<br>Recruiter</th>
+          <th class="center">Greenhouse /<br>Ashby</th>
+        </tr>
+        <tr>
+          <td>JD generation from voice, chat or text</td>
+          <td class="center yes">Yes</td>
+          <td class="center partial">&mdash;</td>
+          <td class="center partial">&mdash;</td>
+          <td class="center partial">&mdash;</td>
+        </tr>
+        <tr>
+          <td>Built-in fit scoring, 20 parameters</td>
+          <td class="center yes">Yes</td>
+          <td class="center partial">Basic</td>
+          <td class="center partial">Basic</td>
+          <td class="center partial">Varies</td>
+        </tr>
+        <tr>
+          <td>Native to our existing Zoho workflow</td>
+          <td class="center yes">Yes</td>
+          <td class="center yes">Yes</td>
+          <td class="center partial">&mdash;</td>
+          <td class="center partial">&mdash;</td>
+        </tr>
+        <tr>
+          <td>Configurable SLAs per hiring stage</td>
+          <td class="center yes">Yes</td>
+          <td class="center partial">Basic</td>
+          <td class="center partial">&mdash;</td>
+          <td class="center yes">Yes</td>
+        </tr>
+        <tr>
+          <td>Full ATS breadth, interviews to offers</td>
+          <td class="center partial">Roadmap</td>
+          <td class="center yes">Yes</td>
+          <td class="center partial">&mdash;</td>
+          <td class="center yes">Yes</td>
+        </tr>
+      </table>
+      <p class="disclaimer">Illustrative comparison based on publicly available product information. Established platforms bring broader ecosystems; our advantage is depth in the two steps that cost us the most time today.</p>
+    </div>
+  </section>
+
+  <!-- 12. ROADMAP -->
+  <section class="slide" id="s12">
+    <div class="kicker reveal r1">Future roadmap</div>
+    <h2 class="headline reveal r2" style="max-width:24ch;">Where we take this next.</h2>
+    <div class="waves reveal r3">
+      <div class="wave now">
+        <div class="wt">Now</div>
+        <div class="chips">
+          <div class="chip">Batch candidate processing</div>
+          <div class="chip">Two-way Zoho sync</div>
+          <div class="chip">Resume Scoring alignment</div>
+        </div>
+      </div>
+      <div class="wave next">
+        <div class="wt">Next</div>
+        <div class="chips">
+          <div class="chip">LinkedIn, GitHub &amp; Naukri sourcing</div>
+          <div class="chip">InterviewNinja integration</div>
+          <div class="chip">Resume parsing</div>
+          <div class="chip">Candidate AI summary</div>
+          <div class="chip">Duplicate candidate detection</div>
+        </div>
+      </div>
+      <div class="wave later">
+        <div class="wt">Later</div>
+        <div class="chips">
+          <div class="chip">Recruiter copilot</div>
+          <div class="chip">Hiring analytics dashboard</div>
+          <div class="chip">Interview question generator</div>
+          <div class="chip">Salary &amp; talent market insights</div>
+          <div class="chip">Offer letter generation</div>
+          <div class="chip">Referral intelligence</div>
+          <div class="chip">Internal mobility &amp; talent marketplace</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13. CLOSING -->
+  <section class="slide dark" id="s13">
+    <div class="arc a1"></div><div class="arc a2"></div><div class="arc a3"></div>
+    <div class="content">
+      <div class="kicker reveal r1">Closing thought</div>
+      <h2 class="close-line reveal r2">Let's make this the way we hire, not just how we hired once.</h2>
+      <p class="sub-line reveal r3">From a proof of concept to a platform that scales with every requirement, every recruiter, every hire.</p>
+      <div class="vision-tags reveal r4">
+        <div class="vtag">Faster</div>
+        <div class="vtag">Consistent</div>
+        <div class="vtag">Scalable</div>
+        <div class="vtag">Continuously improving</div>
+      </div>
+      <p class="final-line reveal r5">Thank you. Happy to take any questions.</p>
+    </div>
+  </section>
+
+</div>
+
+<div class="nav-controls">
+  <button class="nav-btn" id="prevBtn" aria-label="Previous slide"><svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <div class="dots" id="dots"></div>
+  <button class="nav-btn" id="nextBtn" aria-label="Next slide"><svg viewBox="0 0 24 24" fill="none"><path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+</div>
+
+<div class="notes-panel" id="notesPanel">
+  <div class="n-label">Speaker notes</div>
+  <div id="notesText"></div>
+</div>
+
+<script>
+  const notes = [
+    "Open on the headline, not the pain. This has been running in our own TA team, not a lab demo. Set the frame: we are asking to move from proof of concept to a supported product.",
+    "Keep this short: two full days per role today, one for the JD, one for sourcing, and no consistent way to compare candidates. This is the cost of staying manual.",
+    "This is the single sentence to remember: one platform, every step connected. Everything after this slide is proof of that sentence.",
+    "Three modules, one shared backbone: Zoho Recruit. We are not asking anyone to change systems, only to remove the manual work sitting on top of it.",
+    "Walk the line left to right. Point out where minutes replace days: JD generation and AI matching. Everything else is the same steps recruiters already know.",
+    "Inputs are flexible on purpose: recruiters can use whatever is easiest, a quick note, a call, or a chat. The output is always the same complete, on-brand JD.",
+    "This is where the second full day disappears. Twenty parameters means the ranking is consistent, not just one recruiter's judgement call.",
+    "Translate every AI term into what it does for a recruiter. No one in this room needs to know how it works, only that it removes work.",
+    "This is the control layer that makes this safe to scale: templates keep quality consistent, SLAs keep every stage accountable.",
+    "These are estimates, labelled as such. The real ask is a pilot to replace them with our own numbers.",
+    "Be honest here: established platforms have more breadth. Our edge is depth in the two steps that cost us the most time today, and that we already own the workflow end to end.",
+    "Now is funded and scoped. Next and later are directional. Do not over-promise dates on later items.",
+    "Land on this line and let it sit for a second before moving to thank you. This is the sentence you want them to remember walking out of the room."
+  ];
+
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const total = slides.length;
+  let current = 0;
+
+  const dotsWrap = document.getElementById('dots');
+  slides.forEach((_, i) => {
+    const b = document.createElement('button');
+    b.className = 'dot-btn' + (i === 0 ? ' on' : '');
+    b.addEventListener('click', () => goTo(i));
+    dotsWrap.appendChild(b);
+  });
+  const dotEls = Array.from(dotsWrap.children);
+  document.getElementById('idxTotal').textContent = String(total).padStart(2,'0');
+
+  function render(){
+    slides.forEach((s,i) => s.classList.toggle('active', i === current));
+    dotEls.forEach((d,i) => d.classList.toggle('on', i === current));
+    document.getElementById('idxCurrent').textContent = String(current+1).padStart(2,'0');
+    document.body.classList.toggle('on-dark', slides[current].classList.contains('dark'));
+    document.getElementById('progressFill').style.width = ((current+1)/total*100) + '%';
+    document.getElementById('notesText').textContent = notes[current] || '';
+  }
+  function goTo(i){ current = Math.max(0, Math.min(total-1, i)); render(); }
+  document.getElementById('prevBtn').addEventListener('click', () => goTo(current-1));
+  document.getElementById('nextBtn').addEventListener('click', () => goTo(current+1));
+
+  const notesPanel = document.getElementById('notesPanel');
+  window.addEventListener('keydown', (e) => {
+    if(['ArrowRight','PageDown',' '].includes(e.key)){ e.preventDefault(); goTo(current+1); }
+    if(['ArrowLeft','PageUp'].includes(e.key)){ e.preventDefault(); goTo(current-1); }
+    if(e.key === 'n' || e.key === 'N'){ notesPanel.classList.toggle('open'); }
+  });
+
+  let touchX = null;
+  window.addEventListener('touchstart', e => touchX = e.touches[0].clientX);
+  window.addEventListener('touchend', e => {
+    if(touchX === null) return;
+    const dx = e.changedTouches[0].clientX - touchX;
+    if(Math.abs(dx) > 50) goTo(current + (dx < 0 ? 1 : -1));
+    touchX = null;
+  });
+
+  render();
+</script>
+</body>
+</html>
